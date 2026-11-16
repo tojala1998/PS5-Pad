@@ -10,3 +10,5 @@ __pycache__/
 *.key
 .env*
 *transfer.json
+*.sprx
+experiments/*/build/

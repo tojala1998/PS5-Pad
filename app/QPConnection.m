@@ -2,6 +2,7 @@
 #import <Network/Network.h>
 #import <UIKit/UIKit.h>
 #import "QPInputQueue.h"
+#include <errno.h>
 
 @interface QPConnection () {
     nw_connection_t _connection;
@@ -18,6 +19,7 @@
     BOOL _dirty;
     uint8_t _controlType;
     BOOL _controlSent;
+    BOOL _initializationFailed;
     NSTimeInterval _controlStarted;
     NSString *_host;
     NSString *_lastAction;
@@ -69,7 +71,7 @@
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
     _ready=NO; _padReady=NO; _connecting=NO; _inflight=0; _state=qp_neutral(); _dirty=NO;
-    _controlBusy=NO; _controlType=0; _controlSent=NO; _supportsControl=NO; qp_input_reset(&_inputs);
+    _controlBusy=NO; _controlType=0; _controlSent=NO; _supportsControl=NO; _initializationFailed=NO; qp_input_reset(&_inputs);
     if(_loader) { nw_connection_cancel(_loader); _loader=nil; }
     _message=reason; _latency=-1;
     if (old) {
@@ -87,6 +89,7 @@
 - (void)connectTo:(NSString *)host {
     [self disconnect:@"Connecting to your PS5…"];
     _host=[host copy]; _connecting=YES; _received=[NSMutableData data]; _state=qp_neutral();
+    _lastAction=nil; _lastActionStatus=0;
     _sequence=0; _lastAck=0; _failures=0; _padHandle=-1; _started=[self now]; _lastPong=_started;
     nw_endpoint_t endpoint=nw_endpoint_create_host(host.UTF8String,"9305");
     nw_parameters_t params=nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL,
@@ -206,8 +209,8 @@
             }
             _padHandle=(int32_t)qp_u32(p+4); _ready=YES; _connecting=NO;
             _supportsControl=(qp_u32(p+12)&0x10000)!=0;
-            _padReady=(qp_u32(p+12)&1)!=0;
-            _message=@"Your controller is connected"; _lastPong=[self now]; _dirty=YES;
+            _padReady=(qp_u32(p+12)&1)!=0 && _padHandle>=0;
+            _message=@"PS5 Pad service connected."; _lastPong=[self now]; _dirty=YES;
             [self flush]; [self ping]; [self checkController]; [self publish];
         } else if(kind==QP_ACK && length==8 && _ready) {
             uint32_t seq=qp_u32(p); int32_t status=(int32_t)qp_u32(p+4);
@@ -217,7 +220,8 @@
             if(qp_u32(p)!=_pingToken) continue;
             _lastPong=[self now]; _latency=(NSInteger)((_lastPong-_lastPing)*1000);
             _failures=qp_u32(p+32);
-            _padReady=(qp_u32(p+20)&1)!=0; _padHandle=(int32_t)qp_u32(p+16);
+            _padHandle=(int32_t)qp_u32(p+16);
+            _padReady=(qp_u32(p+20)&1)!=0 && _padHandle>=0 && !_initializationFailed;
             [self publish];
         } else if(kind==QP_ERROR && length>=4) {
             NSString *detail=[[NSString alloc] initWithBytes:p+4 length:length-4 encoding:NSUTF8StringEncoding];
@@ -226,20 +230,33 @@
             if(!_controlSent || _controlType!=kind) { [self disconnect:@"Unexpected controller response."]; return; }
             _userStatus=(int32_t)qp_u32(p+4); _otherController=(int32_t)qp_u32(p+8);
             _padHandle=(int32_t)qp_u32(p+16); _vlcInstalled=(qp_u32(p+24)&1)!=0; _kodiInstalled=(qp_u32(p+24)&2)!=0;
-            _padReady=(qp_u32(p+20)&1)!=0;
+            BOOL reportedReady=(qp_u32(p+20)&1)!=0 && _padHandle>=0;
+            _padReady=reportedReady&&!_initializationFailed;
             _initializationCount=qp_u32(p+28); _controlBusy=NO; _controlType=0; _controlSent=NO;
             _lastPong=[self now]; _sentAt=_lastPong;
             if(kind==QP_INITIALIZE) {
-                _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
-                _message=@"Controller turned on. Select your profile on the TV if asked.";
-                _lastAction=@"initialize"; _lastActionStatus=(int32_t)qp_u32(p);
-                if(_completed) _completed(@"initialize",(int32_t)qp_u32(p));
+                int32_t status=(int32_t)qp_u32(p);
+                BOOL incomplete=!status&&!reportedReady;
+                if(incomplete) status=EPROTO;
+                _initializationFailed=status!=0; _padReady=reportedReady&&!_initializationFailed;
+                _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=_padReady;
+                if(incomplete) _message=@"Initialization failed: the service did not report a ready virtual controller.";
+                else if(status) _message=[NSString stringWithFormat:@"Initialization failed (0x%08X). Use ••• → Initialize Controller to retry.",(unsigned)status];
+                else _message=@"Virtual controller ready. Select your profile on the TV if asked.";
+                _lastAction=@"initialize"; _lastActionStatus=status;
+                if(_completed) _completed(@"initialize",status);
+            } else {
+                int32_t status=(int32_t)qp_u32(p);
+                if(status) { _padReady=NO; _message=[NSString stringWithFormat:@"Controller check failed (0x%08X).",(unsigned)status]; }
+                else if(_initializationFailed) _message=@"Initialization has not succeeded. Use ••• → Initialize Controller to retry.";
+                else _message=_padReady?@"Service connected; virtual controller available. Profile control is not verified.":@"Service connected. Use ••• → Initialize Controller.";
             }
             [self flush]; [self publish];
         } else if((kind==QP_VLC || kind==QP_KODI) && length==4 && _ready) {
             if(!_controlSent || _controlType!=kind) { [self disconnect:@"Unexpected media response."]; return; }
             _controlBusy=NO; _controlType=0; _controlSent=NO; _lastPong=[self now]; _sentAt=_lastPong;
             _lastAction=kind==QP_VLC?@"VLC":@"Kodi"; _lastActionStatus=(int32_t)qp_u32(p);
+            _message=_lastActionStatus?[NSString stringWithFormat:@"%@ launch failed (0x%08X)",_lastAction,(unsigned)_lastActionStatus]:[NSString stringWithFormat:@"%@ launch requested",_lastAction];
             if(_completed) _completed(_lastAction,_lastActionStatus);
             [self flush]; [self publish];
         } else { [self disconnect:@"Unexpected reply from the PS5 service."]; return; }
@@ -249,6 +266,7 @@
     if(!_ready || !_supportsControl || _controlBusy) return;
     _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _controlBusy=YES; _controlType=kind; _controlSent=NO; _controlStarted=[self now];
+    _message=kind==QP_INITIALIZE?@"Initializing…":(kind==QP_STATUS?@"Checking controller…":(kind==QP_KODI?@"Opening Kodi…":@"Opening VLC…"));
     [self flush]; [self publish];
 }
 - (void)checkController { [self control:QP_STATUS]; }

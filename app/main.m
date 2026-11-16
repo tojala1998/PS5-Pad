@@ -153,6 +153,7 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic) BOOL wantsConnection;
 @property(nonatomic) BOOL didOfferSetup;
 @property(nonatomic) BOOL needsInitializePrompt,initializePromptScheduled;
+@property(nonatomic) BOOL showingLinkProgress;
 @property(nonatomic,strong) UILabel *initializeHint;
 - (void)resume;
 - (void)suspend;
@@ -184,8 +185,8 @@ static void Round(UIView *view,CGFloat radius) {
     _link.changed=^{[weakSelf refresh];};
     _link.completed=^(NSString *action,int32_t status) {
         QPViewController *self=weakSelf; if(!self) return;
-        if(status) self.result.text=[NSString stringWithFormat:@"%@ failed (0x%08X)",action,(unsigned)status];
-        else if([action isEqual:@"initialize"]) self.result.text=@"Controller on. Choose your profile on the TV if asked.";
+        if([action isEqual:@"initialize"]) self.result.text=self.link.message;
+        else if(status) self.result.text=[NSString stringWithFormat:@"%@ failed (0x%08X)",action,(unsigned)status];
         else self.result.text=[NSString stringWithFormat:@"%@ launch requested",action];
     };
     _appsButton=[self symbol:@"square.grid.2x2" label:@"Open Kodi" action:@selector(showApps)];
@@ -218,7 +219,7 @@ static void Round(UIView *view,CGFloat radius) {
     }
     _result=Label(@"",10,UIFontWeightRegular,Color(0xAAAAAA)); _result.textAlignment=NSTextAlignmentCenter;
     _result.numberOfLines=2; [_canvas addSubview:_result]; [self refresh];
-    _initializeHint=Label(@"Another controller took over? Tap the status above to initialize again.",11,UIFontWeightRegular,Color(0x999999));
+    _initializeHint=Label(@"If another controller takes over, use ••• → Initialize Controller.",11,UIFontWeightRegular,Color(0x999999));
     _initializeHint.numberOfLines=2; _initializeHint.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:_initializeHint];
 }
 - (void)viewDidLayoutSubviews {
@@ -247,8 +248,10 @@ static void Round(UIView *view,CGFloat radius) {
     else [self resume];
 }
 - (void)refresh {
-    _statusLabel.text=_link.ready?(_link.padReady?@"Controller connected":@"Console online · tap to initialize"):
-        (_link.connecting?@"Connecting…":(_host.length?@"Offline · tap to connect":@"Add your PS5"));
+    _statusLabel.text=_link.controlBusy?_link.message:(_link.ready?(_link.padReady?@"Virtual controller ready":@"Service connected · use •••"):
+        (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5")));
+    if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
+    else if(_showingLinkProgress) { _showingLinkProgress=NO; _result.text=_link.message; }
     _consoleButton.accessibilityValue=_statusLabel.text;
     BOOL active=_link.ready&&_link.padReady&&!_link.controlBusy; _swipe.active=active;
     for(QPButton *button in _buttons) { button.enabled=active; button.alpha=active?1:.35; if(!active) [button clear]; }
@@ -307,9 +310,13 @@ static void Round(UIView *view,CGFloat radius) {
     if(!_host.length) { [self findConsole]; return; }
     if(_link.controlBusy||_link.connecting) return; [self clearControls];
     _needsInitializePrompt=NO;
-    NSString *text=_link.ready?@"Initialize PS5 Pad to take control, then select your profile on the TV if asked.\n\nDo this again every time another controller takes over. Tap the connection status at the top to initialize again. The other controller may disconnect.":@"Connect to your console, or load the controller service if its jailbreak and ELF loader are running. Then initialize PS5 Pad to take control.";
+    NSString *text=_link.ready?@"Initialize PS5 Pad, then select your profile on the TV if asked.\n\nIf another controller takes over, use ••• → Initialize Controller again. This app cannot yet verify which controller owns your profile. The other controller may disconnect.":@"Connect to your console, or load the controller service if its jailbreak and ELF loader are running. Then use ••• → Initialize Controller.";
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Initialize Controller" message:text preferredStyle:UIAlertControllerStyleAlert];
-    if(_link.ready&&_link.supportsControl) [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; [self.link initializeController]; }]];
+    if(_link.ready&&_link.supportsControl) [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        (void)a;
+        if(!self.link.ready || !self.link.supportsControl || self.link.controlBusy) { self.result.text=@"Connection changed. Use ••• to reconnect or retry."; return; }
+        self.result.text=@"Initializing…"; [self.link initializeController];
+    }]];
     else if(!_link.ready) {
         [sheet addAction:[UIAlertAction actionWithTitle:@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.needsInitializePrompt=YES; self.wantsConnection=YES; dispatch_async(dispatch_get_main_queue(),^{[self resume];}); }]];
         [sheet addAction:[UIAlertAction actionWithTitle:@"Load Controller Service" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.needsInitializePrompt=YES; self.wantsConnection=YES; [self.link loadServiceAt:self.host]; }]];

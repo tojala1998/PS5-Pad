@@ -1,0 +1,32 @@
+PS5 Pad 0.4.3 (build 9), controller service 2.2
+
+Initialization immediately shows progress and clears stale success text. Recovery
+help now says to use the three-dot menu: "If another controller takes over, use
+the three-dot menu > Initialize Controller." This is conditional help; the app
+does not detect another controller taking over or prove profile ownership.
+
+Service 2.2 waits at least 180 ms after removing its old virtual controller,
+including when the optional controller query is unavailable. It sends neutral
+reports for 200 ms after adding the replacement and returns a failure if those
+reports fail. Failed initialization disables input and cleans up the new handle;
+failed removal never creates a duplicate. No automatic second initialization,
+PS-button press, profile selection or app launch is performed.
+
+The detach interval and neutral warmup address a timing gap. Physical controller
+assignment still requires selecting the profile on the TV when asked. Whether
+this resolves the reported two-attempt issue requires a live user test.
+
+Same app identity: com.uhnmeyker.ps5pad. No settings are seeded, migrated or reset.
+Unsigned transfer is separate from the SideStore signing/update step.
+
+Keyboard: the isolated native keyboard test typed the requested address exactly
+into Kodi on firmware 13.60, as confirmed by the owner. That test keyboard was
+removed and its temporary service stopped. Contextual keyboard detection remains
+unverified, so this app does not register a virtual keyboard. Future integration
+must remove its keyboard on background, disconnect and a short server-side lease
+timeout, independently of whether an explicit close message arrives.
+
+Validation: protocol/input queue/discovery/UI contract checks, service smoke and
+fault tests, ARM64 build with warnings treated as errors, unsigned archive/hash
+validation. Hardware results are recorded separately; local tests do not prove
+TV profile assignment or effective input routing.

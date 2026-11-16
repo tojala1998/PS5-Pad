@@ -17,3 +17,4 @@ $(BUILD)/padd-host: payload/padd.c payload/system_host.c $(HEADERS) | $(BUILD)
 
 check: $(BUILD)/padd-host
 	python3 smoke_test.py "$(BUILD)/padd-host"
+	python3 initialization_test.py "$(BUILD)/padd-host"

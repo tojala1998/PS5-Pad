@@ -1,7 +1,8 @@
 # System-wide keyboard research
 
 Investigated on November 16, 2026. This is a feasibility record, not a claim that
-PS5 Pad currently supports text entry. Version 0.4.1 contains no keyboard changes.
+the PS5 Pad iPhone app currently supports text entry. The current app contains no
+keyboard changes; an isolated console-side experiment is described below.
 
 The requested behavior is an iPhone keyboard that appears when the console opens
 its text keyboard, across Kodi, VLC, Prospero and other apps. The connection must
@@ -36,8 +37,8 @@ its first report, keep presses long enough to be sampled, and release all held
 keys on disconnect. It reports that calling `sceKeyboardInit` from its probe
 crashed that payload; the raw-device implementation avoids that path.
 
-This evidence does not prove compatibility with the user's firmware or typing in
-Kodi/Prospero. HID key reports also depend on the console's keyboard layout and
+Upstream evidence alone does not prove compatibility with another firmware or
+typing in Kodi/Prospero. HID key reports also depend on the console's keyboard layout and
 are not arbitrary Unicode text replacement. The first test should cover digits,
 dots, colons, slashes, letters, Shift, Backspace and Enter in a disposable field.
 
@@ -95,5 +96,127 @@ session state without reading or logging the text entered by the user.
    capabilities. Unsupported or unknown state must remain explicit; it must never
    trigger a guessed keyboard popup. Then add the contextual iOS text editor.
 
-No replacement ELF, firmware hooks, console settings changes or experimental
-keyboard input were deployed during this research.
+## Separate live keyboard test
+
+The isolated [keyboard probe](../experiments/keyboard-probe/README.txt) reuses
+ProsperoSunshine's pinned keyboard implementation and carries GPL-3.0-only
+notices. Its startup and STATUS commands create no input device. It listens on
+TCP 9306, expires after five minutes, and creates a keyboard only after an explicit
+OPEN command. Input is bounded to printable US-ASCII; disconnect and idle timeout
+release and remove only its own keyboard. It neither replaces the controller
+service nor calls video/audio, Remote Play, app-launch or ShellUI attachment code.
+
+The owner's console reported firmware **13.60**, raw SDK value `0x13600007`.
+The owner opened an empty Kodi text field. The probe sent a 13-character dotted
+IPv4 address without Enter; every report returned success, and the owner confirmed
+the exact text appeared. Keyboard removal and STOP both returned success.
+
+This establishes direct real keyboard input in that Kodi field on this console.
+Other apps, layouts, Unicode, text replacement and automatic keyboard-open/close
+detection remain unverified. No firmware hooks or console settings were changed.
+
+Two named files in `/system_ex/common_ex/lib/` were then copied using existing FTP
+read access: `Sce.PlayStation.Ime.dll.sprx` and `Sce.Vsh.Ime.dll.sprx`. Both contain
+CLI metadata signatures. Local metadata inspection can identify candidate methods
+without executing the assemblies, attaching ShellUI or changing process credentials.
+Neither system file is included in this repository or the source deliverables.
+
+## Offline metadata findings on firmware 13.60
+
+The two local copies were inspected with .NET `MetadataReaderProvider`, without
+loading the assemblies or reading/executing their method bodies. The parser
+validated the embedded metadata stream bounds and decoded type ownership,
+member names and signatures. `Sce.PlayStation.Ime` contains 113 types, 268 methods
+and eight properties; `Sce.Vsh.Ime` contains five types, 19 methods and three
+properties. Neither assembly declares CLR events. The private firmware files and
+full metadata inventory remain outside this repository.
+
+The following are actual metadata declarations in namespace
+`Sce.PlayStation.Core.Ime`, not verified runtime behavior:
+
+| Declaration | What it establishes and what remains unknown |
+| --- | --- |
+| `ImeClient.Open(ImeParam)` and `Close()` | Concrete lifecycle method candidates. Their call sites and behavior were not examined. |
+| `ImeClient.GetShowWindowType(out ImeWindowType)` | An instance method returning a window-type enum. The class has a private `UInt64 imeClientAccessor`; there is no evidence that another process can use this method to query the console's active keyboard. |
+| `ImeWindowType.Default`, `Inline`, `Dialog` | Actual enum member names. None is an established global visible/hidden flag. |
+| `ImeParam.Handler : ImeEventHandler`, whose `Invoke` accepts `ImeEvent` | A callback mechanism exists for an IME client. It is not a discovered external subscription API. |
+| `ImeEventId.Open`, `PressClose`, `Abort`, `ImeEventTerminate`, `ImeEventExitFocus`, `ImeEventEnterFocusToKeyboard`, `ImeEventChangeWindowType` | Actual enum member names that identify lifecycle candidates. Event delivery, ordering and interpretation remain unverified. |
+| `IOskDialog.Open(ImeDialogPositionInfo)` and `Close()` | Abstract interface declarations, not concrete hook implementations. |
+| `openStateControl.resistOpenInfo(...)` and `unResistOpenInfo(UInt64)` | The internal static type has a private `openList` of accessor/parameter records. No public state/count accessor was found, and its scope across processes or managed runtimes is unknown. |
+
+`Sce.Vsh.Ime` mainly exposes voice-input components. Its `VoiceInputStatus` does
+not establish whether the on-screen keyboard is visible. The distinct
+`Sce.Vsh.ShellUI.Ime.dll.sprx` from the public module inventory has not been
+inspected in this offline pass.
+
+These findings narrow the search, but **runtime global keyboard visibility is
+still unverified**. Successful HID typing does not validate any of these lifecycle
+candidates, and none is currently wired into PS5 Pad.
+
+## External observation boundary and next investigation
+
+No reviewed implementation establishes global IME visibility through an existing
+read-only external observer without Remote Play, process injection, attachment
+or credential changes. Static files can reveal declarations, but do not change
+with the current keyboard session. Foreground application and generic system-UI
+overlay state cannot distinguish an IME from other overlays. The SDK's
+[`sceImeDialogGetStatus` stub](https://github.com/ps5-payload-dev/sdk/blob/8816aee4cd88fc47b07819d2b6f4769c095a074b/sce_stubs/libSceImeDialog.c)
+establishes an export name, not the semantics of a cross-process query.
+
+The SDK's
+[`mdbg_copyout`](https://github.com/ps5-payload-dev/sdk/blob/8816aee4cd88fc47b07819d2b6f4769c095a074b/crt/mdbg.c)
+does not ptrace-attach or stop the target, but temporarily changes the caller's
+authid and capabilities. Calling it is therefore not a zero-security-change
+observation. The
+[`kernel_proc_copyout` implementation](https://github.com/ps5-payload-dev/sdk/blob/8816aee4cd88fc47b07819d2b6f4769c095a074b/crt/kernel_procio.c)
+tries that helper first; switching to this wrapper does not avoid that behavior.
+Neither route is part of the current investigation or production design.
+
+The next bounded research step is to identify the remaining ShellUI IME assembly
+through existing permitted file access, if available, and inspect its metadata
+offline for concrete lifecycle implementations or references to an externally
+observable interface. Candidate declarations then need implementation evidence
+and controlled open/close observations before they can drive a feature. If no
+such external interface is found, record automatic detection as unsupported;
+do not substitute guessed visibility or silently introduce a ShellUI agent.
+
+## Required production keyboard lifetime
+
+These are design requirements, not implemented production behavior. PS5 Pad must
+only own a virtual keyboard during an active keyboard session:
+
+- Require all three conditions: the iPhone app is active in the foreground, its
+  current direct LAN connection is live, and a supported observer freshly reports
+  that the console keyboard is visible. Unknown, stale or unsupported visibility
+  must not create a keyboard or present the contextual editor.
+- Create the virtual keyboard only for that session. A scan, service connection,
+  controller initialization or idle app must not create one. Session identifiers
+  must distinguish newly opened keyboards from expired or reconnected sessions;
+  reject delayed reports from an old session.
+- On observed keyboard close, cancellation, visibility becoming unknown, app
+  backgrounding, connection loss, explicit disconnect, lease expiry or service
+  shutdown: send an all-keys-up report, remove only this session's virtual
+  keyboard, invalidate its session and dismiss the iPhone editor. Cleanup must be
+  idempotent and must not remove physical devices or another service's devices.
+- Enforce a short lease on the console independently of iOS cleanup. A proposed
+  starting point is a two-second monotonic deadline refreshed every 500 ms only
+  while all eligibility conditions remain true. The server must check expiry
+  even when a client goes silent, is killed or sends a partial request; network
+  handlers must not block that cleanup. These timings require testing on this
+  console before they become a compatibility promise.
+- A disconnect or expired lease must release held modifiers and ordinary keys
+  even if the last key-up report was lost. Graceful shutdown and lease expiry
+  need separate checks; cleanup after a payload crash must not be assumed from
+  the successful explicit STOP test.
+- Do not leave a persistent keyboard, override the user's controller permanently,
+  disable physical input or change console settings. Reconnection requires fresh
+  visibility and a new eligible session, rather than restoring stale ownership.
+- Observe session state only. Do not read or log the console field's text; do not
+  retain typed content in diagnostics. Text supplied by the user for delivery is
+  distinct from reading an existing console text field.
+
+Before release, verify normal close/cancel, app backgrounding, connection loss,
+client termination, expired/delayed session messages and service shutdown while
+a modifier is held. Confirm that keys are released, the owned keyboard disappears
+and the physical controller remains usable. These checks must use a disposable
+field in the current app and must not switch applications without authorization.

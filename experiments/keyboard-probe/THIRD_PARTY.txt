@@ -1,0 +1,14 @@
+ProsperoSunshine native virtual keyboard/mouse implementation
+Project: https://github.com/Darkatek7/ProsperoSunshine
+Commit: 6e33be0adbccf579e4c14c432d4bb2becbb333c9
+Files retained unmodified: third_party/kbm.c, third_party/kbm.h
+Original paths: src/platform/ps5/kbm.c, src/platform/ps5/kbm.h
+License: GPL-3.0-only (LICENSE)
+Copyright: the ProsperoSunshine contributors; retained original SPDX notices.
+
+Only keyboard entry points are called. Function-section garbage collection
+excludes the unused mouse implementation from the delivered ELF.
+
+PS5 Payload SDK v0.43 supplies the compiler, startup and runtime. The executable
+uses the same SDK/runtime configuration as the existing PS5 Pad console service.
+Project: https://github.com/ps5-payload-dev/sdk/releases/tag/v0.43

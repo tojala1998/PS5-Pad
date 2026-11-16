@@ -27,7 +27,9 @@
 #include "protocol.h"
 #include "system.h"
 
-#define PADD_VERSION 0x0201
+#define PADD_VERSION 0x0202
+#define PAD_DETACH_SETTLE_MS 180u
+#define PAD_NEUTRAL_WARMUP_MS 200u
 
 struct config {
     int port;
@@ -50,7 +52,7 @@ struct daemon {
     int add_status;
     int32_t other_connected, other_status, user_status;
     uint32_t initialization_count;
-    uint64_t started_ms, last_state_ms, last_rx_ms, last_report_ms;
+    uint64_t started_ms, last_state_ms, last_rx_ms, last_report_ms, last_detach_ms;
     uint64_t reports_sent;
     uint32_t report_failures, neutral_events;
     int last_report_status;
@@ -182,19 +184,49 @@ static int initialize_controller(struct daemon *d) {
     d->user_status = rc;
     if (rc) return rc;
     force_neutral(d, "initialize");
-    if (d->pad.ready) {
+    if (d->pad.handle >= 0) {
         rc = pad_remove(d->pad.handle);
-        if (rc) return rc; /* Never create a duplicate if removal failed. */
+        if (rc) {
+            d->pad.ready = 0;
+            return rc; /* Never create a duplicate if removal failed. */
+        }
+        d->pad.ready = 0; d->pad.handle = -1;
+        d->last_detach_ms = now_ms();
     }
     d->pad.ready = 0; d->pad.handle = -1;
+    /* Removal is asynchronous, including cleanup of a failed initialization.
+     * The gap must not depend on the optional libScePad snapshot succeeding. */
+    while (d->last_detach_ms && now_ms() - d->last_detach_ms < PAD_DETACH_SETTLE_MS) usleep(1000);
     d->other_status = system_controller_connected(user, &d->other_connected);
     d->pad.user_id = user;
     neutral(&d->pad.state);
     d->add_status = pad_add(user, &d->pad.handle);
+    if (!d->add_status && d->pad.handle < 0) d->add_status = EIO;
     d->pad.ready = !d->add_status && d->pad.handle >= 0;
     d->initialization_count++;
+    /* Feed neutral reports through attachment before acknowledging success.
+     * Accepted reports still do not prove that the TV's user picker assigned
+     * this controller: the person must confirm that on the console. */
+    if (d->pad.ready) {
+        const uint64_t attached = now_ms();
+        do {
+            rc = apply(d);
+            if (rc) break;
+            usleep(d->cfg.tick_ms * 1000u);
+        } while (now_ms() - attached < PAD_NEUTRAL_WARMUP_MS);
+        if (rc) {
+            d->add_status = rc;
+            d->pad.ready = 0;
+            int cleanup = pad_remove(d->pad.handle);
+            log_event("initialize_cleanup", "\"status\":%d,\"handle\":%d", cleanup, d->pad.handle);
+            /* Keep a failed-removal handle for the next initialize or exit. */
+            if (!cleanup) {
+                d->pad.handle = -1;
+                d->last_detach_ms = now_ms();
+            }
+        }
+    }
     d->last_state_ms = now_ms();
-    if (d->pad.ready) apply(d);
     log_event("initialized", "\"status\":%d,\"other_connected\":%d,\"other_status\":%d,\"handle\":%d",
         d->add_status, d->other_connected, d->other_status, d->pad.handle);
     return d->add_status;
@@ -410,7 +442,7 @@ int main(int argc, char **argv) {
     force_neutral(&d, "exit");
     if (d.client_fd >= 0) close(d.client_fd);
     close(d.listen_fd);
-    int remove_status = first->ready ? pad_remove(first->handle) : 0;
+    int remove_status = first->handle >= 0 ? pad_remove(first->handle) : 0;
     log_event("pad_removed", "\"status\":%d", remove_status);
     log_event("stats", "\"reports_sent\":%llu,\"report_failures\":%u,\"neutral_events\":%u",
               (unsigned long long)d.reports_sent, d.report_failures, d.neutral_events);

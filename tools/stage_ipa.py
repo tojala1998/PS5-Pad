@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import zipfile
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -18,7 +19,13 @@ sys.path.insert(0,str(ROOT/'app'))
 from verify_ipa import verify
 
 async def transfer(ipa, bundle_id):
-    report=verify(ipa,ROOT/'service/prebuilt/padd-controller-2.1.elf')
+    with zipfile.ZipFile(ipa) as archive:
+        bundled=archive.read('Payload/PS5Pad.app/padd-controller.elf')
+    known=next((p for p in sorted((ROOT/'service/prebuilt').glob('padd-controller-*.elf'))
+                if p.read_bytes()==bundled),None)
+    if known is None:
+        raise RuntimeError('Bundled service does not match a verified prebuilt ELF.')
+    report=verify(ipa,known)
     data=ipa.read_bytes(); digest=report['sha256']
     async with await create_using_usbmux(connection_type='USB',autopair=False) as phone:
         if not bundle_id:
