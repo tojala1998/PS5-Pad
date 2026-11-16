@@ -152,6 +152,8 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic) NSUInteger pulseGeneration;
 @property(nonatomic) BOOL wantsConnection;
 @property(nonatomic) BOOL didOfferSetup;
+@property(nonatomic) BOOL needsInitializePrompt,initializePromptScheduled;
+@property(nonatomic,strong) UILabel *initializeHint;
 - (void)resume;
 - (void)suspend;
 @end
@@ -176,6 +178,7 @@ static void Round(UIView *view,CGFloat radius) {
     self.view.backgroundColor=Color(0x171717); _canvas=[UIView new]; [self.view addSubview:_canvas];
     _buttons=[NSMutableArray array]; _mediaButtons=[NSMutableArray array]; _link=[QPConnection new];
     _host=[NSUserDefaults.standardUserDefaults stringForKey:@"consoleHost"];
+    _needsInitializePrompt=_host.length>0;
     _wantsConnection=![NSProcessInfo.processInfo.arguments containsObject:@"--offline"];
     __weak QPViewController *weakSelf=self;
     _link.changed=^{[weakSelf refresh];};
@@ -215,6 +218,8 @@ static void Round(UIView *view,CGFloat radius) {
     }
     _result=Label(@"",10,UIFontWeightRegular,Color(0xAAAAAA)); _result.textAlignment=NSTextAlignmentCenter;
     _result.numberOfLines=2; [_canvas addSubview:_result]; [self refresh];
+    _initializeHint=Label(@"Another controller took over? Tap the status above to initialize again.",11,UIFontWeightRegular,Color(0x999999));
+    _initializeHint.numberOfLines=2; _initializeHint.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:_initializeHint];
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews]; UIEdgeInsets safe=self.view.safeAreaInsets;
@@ -231,6 +236,7 @@ static void Round(UIView *view,CGFloat radius) {
     _buttons[5].frame=CGRectMake(1,top,55,area/2-4);
     _buttons[6].frame=CGRectMake(1,top+area/2+4,55,area/2-4);
     _buttons[7].frame=CGRectMake(w-56,top,55,area);
+    _initializeHint.frame=CGRectMake(35,h-118,w-70,38);
     CGFloat unit=(w-28)/5;
     for(NSUInteger i=0;i<_mediaButtons.count;i++) _mediaButtons[i].frame=CGRectMake(14+i*unit,h-75,unit,52);
     _result.frame=CGRectMake(20,h-24,w-40,24);
@@ -249,6 +255,18 @@ static void Round(UIView *view,CGFloat radius) {
     if(!active) { _pulseMask=0; _pulseGeneration++; }
     for(UIButton *button in _mediaButtons) { button.enabled=active; button.alpha=active?1:.3; }
     UIApplication.sharedApplication.idleTimerDisabled=_link.ready;
+    [self offerInitializationIfReady];
+}
+- (void)offerInitializationIfReady {
+    if(!_needsInitializePrompt || _initializePromptScheduled || !_link.ready || !_link.supportsControl || _link.controlBusy ||
+       !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    _initializePromptScheduled=YES;
+    dispatch_async(dispatch_get_main_queue(),^{
+        self.initializePromptScheduled=NO;
+        if(!self.needsInitializePrompt || !self.link.ready || !self.link.supportsControl || self.link.controlBusy ||
+           !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+        [self initialize];
+    });
 }
 - (void)updateState {
     uint32_t buttons=_pulseMask;
@@ -288,13 +306,13 @@ static void Round(UIView *view,CGFloat radius) {
 - (void)initialize {
     if(!_host.length) { [self findConsole]; return; }
     if(_link.controlBusy||_link.connecting) return; [self clearControls];
-    NSString *other=_link.otherController<0?@"Unknown":(_link.otherController?@"Detected at last initialization":@"None at last initialization");
-    NSString *text=_link.ready?[NSString stringWithFormat:@"Console service is running.\nOther controller: %@\n\nTurn On reconnects this remote. Choose your profile on the TV if asked. Another controller may turn off.",other]:@"Connect to your console, or load the controller service if its jailbreak and ELF loader are running.";
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Connect your controller" message:text preferredStyle:UIAlertControllerStyleAlert];
-    if(_link.ready&&_link.supportsControl) [sheet addAction:[UIAlertAction actionWithTitle:@"Turn On Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; [self.link initializeController]; }]];
+    _needsInitializePrompt=NO;
+    NSString *text=_link.ready?@"Initialize PS5 Pad to take control, then select your profile on the TV if asked.\n\nDo this again every time another controller takes over. Tap the connection status at the top to initialize again. The other controller may disconnect.":@"Connect to your console, or load the controller service if its jailbreak and ELF loader are running. Then initialize PS5 Pad to take control.";
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Initialize Controller" message:text preferredStyle:UIAlertControllerStyleAlert];
+    if(_link.ready&&_link.supportsControl) [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; [self.link initializeController]; }]];
     else if(!_link.ready) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.wantsConnection=YES; [self resume]; }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Load Controller Service" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.wantsConnection=YES; [self.link loadServiceAt:self.host]; }]];
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.needsInitializePrompt=YES; self.wantsConnection=YES; dispatch_async(dispatch_get_main_queue(),^{[self resume];}); }]];
+        [sheet addAction:[UIAlertAction actionWithTitle:@"Load Controller Service" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.needsInitializePrompt=YES; self.wantsConnection=YES; [self.link loadServiceAt:self.host]; }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
@@ -323,13 +341,16 @@ static void Round(UIView *view,CGFloat radius) {
     finder.added=^(NSString *host){
         QPViewController *self=weakSelf; if(!self) return;
         self.host=host; [NSUserDefaults.standardUserDefaults setObject:host forKey:@"consoleHost"];
-        self.wantsConnection=YES; self.result.text=@"Console added. Tap its status to turn on the controller."; [self resume];
+        self.needsInitializePrompt=YES; self.wantsConnection=YES; self.result.text=@"Console added. Connecting to initialize…"; [self resume];
     };
     UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:finder];
     navigation.modalPresentationStyle=UIModalPresentationFullScreen;
     [self presentViewController:navigation animated:YES completion:nil];
 }
-- (void)resume { if(_host.length&&_wantsConnection&&!_link.ready&&!_link.connecting&&self.isViewLoaded&&!self.presentedViewController) [_link connectTo:_host]; }
+- (void)resume {
+    if(_host.length&&_wantsConnection&&!_link.ready&&!_link.connecting&&self.isViewLoaded&&!self.presentedViewController) [_link connectTo:_host];
+    [self offerInitializationIfReady];
+}
 - (void)suspend { [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
 @end
 
@@ -346,6 +367,7 @@ static void Round(UIView *view,CGFloat radius) {
     _controller=[QPViewController new]; _window.rootViewController=_controller; [_window makeKeyAndVisible];
 }
 - (void)sceneWillResignActive:(UIScene *)scene { (void)scene; [_controller suspend]; }
+- (void)sceneDidEnterBackground:(UIScene *)scene { (void)scene; _controller.needsInitializePrompt=YES; }
 - (void)sceneDidBecomeActive:(UIScene *)scene { (void)scene; [_controller resume]; }
 - (void)sceneDidDisconnect:(UIScene *)scene { (void)scene; [_controller suspend]; }
 @end

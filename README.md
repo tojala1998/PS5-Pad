@@ -2,7 +2,7 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.0 IPA](releases/0.4.0/PS5-Pad-0.4.0-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.0-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.1.elf)
+[Download the unsigned 0.4.1 IPA](releases/0.4.1/PS5-Pad-0.4.1-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.1-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.1.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
@@ -12,11 +12,17 @@ The large swipe surface handles navigation and Cross/Select. Triangle, Square an
 
 During Kodi video playback, chapter buttons send D-pad Down/Up, rewind and fast-forward use Left/Right step seeking, and Play/Pause sends Options. These are Kodi's controller mappings, not a universal Sony media-remote hook. Files without chapters may use Kodi's large-seek fallback. VLC support is deferred.
 
-Version 0.4.0 corrects the Objective-C UIKit touch callback names that prevented the custom face and top-row controls from responding. It retains the input queue that preserves quick presses through delayed acknowledgements. Build and local regression checks pass; **physical input behavior on the iPhone/PS5 still needs verification for this release**.
+Version 0.4.1 separates Local Network permission from scanning and offers Initialize Controller after adding a console. It retains the 0.4.0 touch-callback correction and the input queue that preserves quick presses through delayed acknowledgements. Build and local regression checks pass. The standalone 0.4.1 installation was verified over USB and its owner confirmed that it opens; **the new permission flow, scan timing and physical button behavior still need on-device confirmation**.
 
-A fresh installation opens Find your PS5. Scan Wi-Fi, select a detected console and tap Add PS5. Scanning recognizes the running PS5 Pad service; it does not pair with PSN, use Remote Play, or start a controller. Start the service first and allow the iOS Local Network prompt. If the first scan finishes while the prompt is open, scan again. Discovery checks the attached IPv4 subnet (the nearest /24 on larger networks); manual entry is available. The address is saved only after Add PS5. No settings or device data are packaged.
+A fresh installation opens Find your PS5 and checks Local Network access before enabling Scan Wi-Fi. Allow the iOS prompt, then scan, select a detected console and tap Add PS5. Access is confirmed by discovering a unique temporary Bonjour service; a timeout or failed connection never counts as permission granted. No console scan starts during the permission check.
 
-Turning on the virtual controller is explicit. Full account synchronization, authenticated pairing and foreground-app detection are not implemented. The service is for a trusted LAN and currently accepts unauthenticated connections.
+Discovery checks the attached IPv4 subnet (the nearest /24 on larger networks). It prioritizes the saved address, alternates low and high addresses, checks up to 48 at once and stops at the first valid service reply. Manual entry is also available. The address is saved only after Add PS5. No settings or device data are packaged.
+
+“PS5 Pad service available” means the app received a valid PMCP greeting with the PS5 Pad control capability from TCP port 9305. An open port alone is insufficient. A recognized busy-service reply appears separately. Discovery sends no input, initialization or app-launch commands; service availability does not establish controller ownership.
+
+After adding a console, the app offers Initialize Controller once the service connects. It also offers this when returning from the background. Initialization remains an explicit button press, with an explanation that it must be repeated when another controller takes over. A reminder above the media controls points back to the connection status. Automatic controller-ownership detection, full account synchronization, authenticated pairing and foreground-app detection are not implemented. The service is for a trusted LAN and currently accepts unauthenticated connections.
+
+System-wide contextual text entry is under [investigation](docs/keyboard-research.md). Existing code can create a real virtual keyboard, but automatic PS5 keyboard-open/close detection without Remote Play has not been established. It is not included in 0.4.1.
 
 ## Build an unsigned IPA on Windows
 
@@ -39,7 +45,7 @@ The script uses a fresh `work/` directory, runs input/wire tests, compiles with 
 The USB transfer needs an already trusted iPhone, LiveContainer, and a Python environment with `pymobiledevice3` installed. It copies the IPA into LiveContainer's Documents folder and reads it back to verify the bytes. It does not sign, install, launch apps, change phone settings or modify the Home Screen.
 
 ```powershell
-.\Transfer-IPA.ps1 -Ipa .\releases\0.4.0\PS5-Pad-0.4.0-unsigned.ipa
+.\Transfer-IPA.ps1 -Ipa .\releases\0.4.1\PS5-Pad-0.4.1-unsigned.ipa
 # Or build and transfer:
 .\Build.ps1 -IosSdk 'C:\path\to\iPhoneOS16.5.sdk' -Transfer
 ```

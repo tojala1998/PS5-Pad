@@ -1,0 +1,37 @@
+PS5 Pad 0.4.1 (build 7)
+
+Same app identity: com.uhnmeyker.ps5pad. No settings are seeded or migrated.
+
+Local Network access is checked before Scan Wi-Fi becomes available. The app
+advertises and browses a unique temporary Bonjour service to confirm access;
+it does not spend the scan timeout while the iOS permission question is open.
+
+Discovery still checks only the local IPv4 subnet, capped at the current /24.
+It now prioritizes the saved console address, alternates low/high addresses,
+uses 48 concurrent checks instead of 12, and stops when it finds the service.
+Each check has a 650 ms deadline. Actual iPhone scan timing is not measured yet.
+No console address is hardcoded. Manual entry remains available.
+
+After adding a console and connecting, an Initialize Controller prompt explains
+the profile handoff and the need to repeat it after another controller takes
+over. The prompt also appears after returning from the background. A small
+reminder above the media controls points to the connection status for reinitializing.
+The prompt itself sends no initialization command; the user presses Initialize.
+
+The service-available label requires a valid PMCP greeting with the PS5 Pad
+control capability on TCP 9305. It confirms a reachable service, not ownership
+of the active controller. Scanning sends no input or app-launch commands.
+
+Validation: ARM64 build with warnings treated as errors; unsigned archive,
+bundle identity, Bonjour declaration and unchanged bundled ELF verified;
+input queue, protocol, UIKit-selector and discovery regression checks pass.
+Discovery tests cover complete/unique address ordering, saved/high addresses,
+fragmented replies, busy services, invalid replies, deadlines and no outgoing commands.
+
+The IPA was transferred over USB with matching SHA-256. Standalone version 0.4.1,
+build 7 was then verified over USB, and the owner confirmed the app opens.
+First-time permission behavior, measured scan speed and physical button behavior
+remain pending on-device confirmation. No phone UI automation was used.
+
+Controller service remains 2.1. No new ELF is required for this release.
+Context-dependent system-wide text entry is being researched and is not included.

@@ -27,15 +27,19 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.4.0</string>
+	<string>0.4.1</string>
 	<key>CFBundleVersion</key>
-	<string>6</string>
+	<string>7</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>MinimumOSVersion</key>
 	<string>15.0</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_ps5pad-access._tcp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>PS5 Pad finds your PS5 on Wi-Fi and connects directly to its controller service. It does not stream audio or video.</string>
 	<key>UIApplicationSceneManifest</key>

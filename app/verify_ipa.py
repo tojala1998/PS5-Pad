@@ -20,6 +20,7 @@ def verify(path, expected_elf):
         assert info['CFBundleDisplayName']=='PS5 Pad', 'Display name mismatch'
         assert info['UIApplicationSceneManifest'], 'Missing scene lifecycle'
         assert info['NSLocalNetworkUsageDescription'], 'Missing network permission description'
+        assert '_ps5pad-access._tcp' in info.get('NSBonjourServices',[]), 'Missing declared permission-check service'
         binary=archive.read(prefix+info['CFBundleExecutable'])
         magic,cpu,subtype,kind,count,size,flags,reserved=struct.unpack_from('<IiiIIIII',binary)
         assert magic==0xfeedfacf and cpu==0x100000c and kind==2, 'Not an ARM64 executable'

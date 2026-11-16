@@ -27,6 +27,20 @@ int main(void) {
     assert(qp_scan_range(0x0a030405,0xffff0000,&first,&last)==2 && first==0x0a030401 && last==0x0a0304fe);
     assert(!qp_scan_range(1,0,&first,&last)); assert(!qp_scan_range(1,0xffff00ff,&first,&last));
     assert(!qp_scan_range(1,0xfffffffe,&first,&last));
+    uint32_t hosts[QP_SCAN_MAX_HOSTS]; size_t count=qp_scan_candidates(0xc0a8000a,0xffffff00,0,hosts);
+    assert(count==253 && hosts[0]==0xc0a80001 && hosts[1]==0xc0a800fe);
+    size_t highIndex=0;
+    for(size_t i=0;i<count;i++) {
+        assert(hosts[i]>=0xc0a80001 && hosts[i]<=0xc0a800fe && hosts[i]!=0xc0a8000a);
+        for(size_t j=0;j<i;j++) assert(hosts[j]!=hosts[i]);
+        if(hosts[i]==0xc0a800f6) highIndex=i;
+    }
+    assert(highIndex<QP_SCAN_CONCURRENCY); /* high DHCP addresses in the first batch */
+    count=qp_scan_candidates(0xc0a8000a,0xffffff00,0xc0a800f6,hosts);
+    assert(count==253 && hosts[0]==0xc0a800f6);
+    count=qp_scan_candidates(0xc0a8000a,0xffffff00,0x0a000001,hosts);
+    assert(count==253 && hosts[0]==0xc0a80001); /* stale host on another network ignored */
+    assert(qp_scan_candidates(0xc0a80001,0xfffffffc,0,hosts)==1 && hosts[0]==0xc0a80002);
     uint8_t hello[28]={0}; qp_header(hello,QP_HELLO,20); hello[8]=1; qp_put32(hello+20,0x10000);
     assert(serve(hello,sizeof hello,0)==1);
     hello[4]=2; assert(serve(hello,8,0)==0); hello[4]=1;

@@ -9,6 +9,8 @@
 #include <time.h>
 #include <unistd.h>
 
+enum { QP_SCAN_CONCURRENCY=48, QP_SCAN_TIMEOUT_MS=650, QP_SCAN_MAX_HOSTS=254 };
+
 /* Addresses are host order. Never sweep more than the current /24 of a larger LAN. */
 static inline int qp_scan_range(uint32_t address, uint32_t mask, uint32_t *first, uint32_t *last) {
     uint32_t inverse=~mask;
@@ -17,6 +19,18 @@ static inline int qp_scan_range(uint32_t address, uint32_t mask, uint32_t *first
     if(limited) mask=0xffffff00;
     *first=(address&mask)+1; *last=(address|~mask)-1;
     return limited?2:1;
+}
+/* Prioritize the previously added console, then alternate low/high addresses.
+ * Every valid host appears once; never probe our own, network or broadcast IP. */
+static inline size_t qp_scan_candidates(uint32_t address,uint32_t mask,uint32_t preferred,uint32_t hosts[QP_SCAN_MAX_HOSTS]) {
+    uint32_t first,last; if(!qp_scan_range(address,mask,&first,&last)) return 0;
+    size_t count=0;
+    if(preferred>=first && preferred<=last && preferred!=address) hosts[count++]=preferred;
+    for(uint32_t low=first,high=last;low<=high;low++,high--) {
+        if(low!=address && low!=preferred) hosts[count++]=low;
+        if(high!=low && high!=address && high!=preferred) hosts[count++]=high;
+    }
+    return count;
 }
 static inline int qp_discovery_reply(const uint8_t *frame, size_t size) {
     if(size<8 || !qp_valid_header(frame) || size!=(size_t)8+qp_u16(frame+6)) return 0;
