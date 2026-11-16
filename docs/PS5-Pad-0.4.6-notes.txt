@@ -29,10 +29,16 @@ No PS5 helper replacement is needed. Controller service 2.3 keeps the virtual
 controller separate from the phone's TCP connection. No phone settings or app
 data are reset. Bundle identifier remains com.uhnmeyker.ps5pad.
 
-Local regression and native build results are recorded separately from live
-confirmation. Lock/unlock and cold relaunch still require owner testing after
-SideStore installs this build. Automatic force-quit cleanup during suspension
-cannot be guaranteed; contextual keyboard input is not included.
+Local lifecycle, protocol, input, discovery, UIKit contract and native ARM64
+build checks passed. The standalone 0.4.6 build 12 installation was verified over
+USB. The owner confirmed both lock/unlock and closing/reopening work automatically
+with Kodi responding. The latest read-only snapshot marks the controller reused,
+with one connection attempt, no service load and zero report failures. The process
+also records one initialization during the test run; this is not a claim that
+the entire run contained zero initializations. Automatic absent-controller/service
+startup and long-duration TV-side inactivity still need separate live tests.
+Automatic force-quit cleanup during suspension cannot be guaranteed; contextual
+keyboard input is not included.
 
 Apple references consulted:
 https://developer.apple.com/documentation/uikit/uiapplication/applicationstate
