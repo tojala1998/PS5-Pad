@@ -2,7 +2,7 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.5 IPA](releases/0.4.5/PS5-Pad-0.4.5-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.5-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.3.elf)
+[Download the unsigned 0.4.6 IPA](releases/0.4.6/PS5-Pad-0.4.6-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.6-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.3.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
@@ -22,7 +22,9 @@ Version 0.4.4 adds one-action initialization with a compact Service → Controll
 
 Button feedback follows a matching, successful controller-report acknowledgment. Each face button (including the swipe pad's Cross) flashes only for its own registered press; repeated neutral/held reports do not retrigger feedback. The hit area stays fixed, and drag tracking uses the same bounds as the painted control. Short confirmed presses remain visible even when their release follows immediately. Confirmation means the service accepted the HID report, not proof that the TV profile or Kodi acted on it.
 
-Version 0.4.5 automatically reconnects to the saved console on launch and unlock, reusing its existing virtual controller. Bounded foreground retries accommodate network wakeup; if the service is unavailable, it may load the bundled service once. Busy, unrecognized and permission-blocked services do not trigger loading. Only a fresh successful status reporting no pad allows automatic initialization. Returning to a healthy controller does not re-arm Initialize. The helper remains 2.3; no controller replacement is needed to deploy this app update. The corrected unlock flow awaits live confirmation.
+Version 0.4.5 automatically reconnects to the saved console on launch and unlock, reusing its existing virtual controller. Bounded foreground retries accommodate network wakeup; if the service is unavailable, it may load the bundled service once. Busy, unrecognized and permission-blocked services do not trigger loading. Only a fresh successful status reporting no pad allows automatic initialization. Returning to a healthy controller does not re-arm Initialize. The helper remains 2.3; no controller replacement is needed to deploy this app update. The owner installed 0.4.5 and reported both resume tests failing: the app stayed Offline/Paused. USB diagnostics showed zero automatic attempts, identifying a lifecycle-start problem addressed in 0.4.6.
+
+Version 0.4.6 starts foreground connection work from the scene lifecycle and reconciles it after view setup. It removes the app-wide state gate and the cancellation-generation startup latch that could drop activation before any network attempt. Lifecycle diagnostics distinguish each process, deferred startup and canceled work. See the [0.4.6 notes](docs/PS5-Pad-0.4.6-notes.txt). Live resume confirmation remains pending.
 
 A fresh installation opens Find your PS5 and checks Local Network access before enabling Scan Wi-Fi. Allow the iOS prompt, then scan, select a detected console and tap Add PS5. Access is confirmed by discovering a unique temporary Bonjour service; a timeout or failed connection never counts as permission granted. No console scan starts during the permission check.
 
@@ -79,7 +81,7 @@ The script uses a fresh `work/` directory, runs input/wire tests, compiles with 
 The USB transfer needs an already trusted iPhone, LiveContainer, and a Python environment with `pymobiledevice3` installed. It copies the IPA into LiveContainer's Documents folder and reads it back to verify the bytes. It does not sign, install, launch apps, change phone settings or modify the Home Screen.
 
 ```powershell
-.\Transfer-IPA.ps1 -Ipa .\releases\0.4.5\PS5-Pad-0.4.5-unsigned.ipa
+.\Transfer-IPA.ps1 -Ipa .\releases\0.4.6\PS5-Pad-0.4.6-unsigned.ipa
 # Or build and transfer:
 .\Build.ps1 -IosSdk 'C:\path\to\iPhoneOS16.5.sdk' -Transfer
 ```

@@ -1,0 +1,40 @@
+PS5 Pad 0.4.6 (build 12), controller service 2.3
+
+The owner installed 0.4.5 and reported that both lock/unlock and closing/reopening
+left the app Offline or Paused in the background. USB verified build 11. Its
+new process diagnostics recorded zero automatic connection attempts, while
+the connection status file still described the previous background pause.
+A subsequent read confirmed zero attempts in the new process and verified that
+the saved console preference was still present; the saved address was not lost.
+
+Review identified two ways startup could be dropped before any network request:
+scene activation was gated by the process-wide UIApplication state, and an early
+rejected start consumed the generation used to permit the first connection.
+The existing diagnostics did not capture callback ordering, so they establish
+the missing attempt rather than which of these two paths occurred on the phone.
+
+This build uses the scene's activation/deactivation events to control foreground
+work. Activation is reconciled on the main queue after view setup. A premature
+start cannot consume the foreground attempt, and suspension invalidates queued
+activation work. Lifecycle diagnostics identify each running process and record
+activation, suspension, attempted startup and reasons for deferring it.
+
+The 0.4.5 session policy remains: connect automatically to a saved console, reuse
+a controller after fresh successful status, and initialize once only when the
+status confirms no controller exists. Connection retries are bounded. A busy,
+unrecognized or permission-blocked service prevents automatic service loading.
+Explicit Disconnect remains stopped until another connection action or launch.
+
+No PS5 helper replacement is needed. Controller service 2.3 keeps the virtual
+controller separate from the phone's TCP connection. No phone settings or app
+data are reset. Bundle identifier remains com.uhnmeyker.ps5pad.
+
+Local regression and native build results are recorded separately from live
+confirmation. Lock/unlock and cold relaunch still require owner testing after
+SideStore installs this build. Automatic force-quit cleanup during suspension
+cannot be guaranteed; contextual keyboard input is not included.
+
+Apple references consulted:
+https://developer.apple.com/documentation/uikit/uiapplication/applicationstate
+https://developer.apple.com/documentation/uikit/uiscenedelegate/scenedidbecomeactive(_:)
+https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle

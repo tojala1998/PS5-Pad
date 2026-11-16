@@ -6,6 +6,7 @@
 #import "QPDiscovery.h"
 #import "QPInitialization.h"
 #import "QPInputFeedback.h"
+#import "QPLifecycle.h"
 
 static UIColor *Color(unsigned rgb) {
     return [UIColor colorWithRed:((rgb>>16)&255)/255.0 green:((rgb>>8)&255)/255.0 blue:(rgb&255)/255.0 alpha:1];
@@ -232,6 +233,7 @@ static void Round(UIView *view,CGFloat radius) {
 @interface QPViewController : UIViewController {
     QPInitialization _initialization;
     QPEnsureSession _ensureSession;
+    QPLifecycle _lifecycle;
 }
 @property(nonatomic,strong) QPConnection *link;
 @property(nonatomic,strong) UIView *canvas;
@@ -249,6 +251,7 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic) BOOL showingLinkProgress;
 @property(nonatomic) BOOL initializationWorkScheduled,autoInitializeAttempted,ensureSessionScheduled,reusedController;
 @property(nonatomic) NSUInteger ensureSessionGeneration;
+@property(nonatomic,copy) NSString *sessionIdentifier,*lifecycleBlockedReason;
 @property(nonatomic) NSUInteger initializationRequests,initializationSends,initializationLoads;
 @property(nonatomic,copy) NSString *initializationFailure;
 @property(nonatomic,strong) UIStackView *initializationProgress;
@@ -256,6 +259,7 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic,strong) UIActivityIndicatorView *initializationSpinner;
 @property(nonatomic,strong) UILabel *initializeHint;
 - (void)resume;
+- (void)activateScene;
 - (void)suspend;
 @end
 
@@ -277,7 +281,7 @@ static void Round(UIView *view,CGFloat radius) {
     [_buttons addObject:button]; [_canvas addSubview:button]; return button;
 }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
+    [super viewDidLoad]; _sessionIdentifier=NSUUID.UUID.UUIDString; _lifecycleBlockedReason=@"Waiting for scene activation"; self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.view.backgroundColor=Color(0x171717); _canvas=[UIView new]; [self.view addSubview:_canvas];
     _buttons=[NSMutableArray array]; _mediaButtons=[NSMutableArray array]; _link=[QPConnection new];
     _host=[NSUserDefaults.standardUserDefaults stringForKey:@"consoleHost"];
@@ -358,6 +362,7 @@ static void Round(UIView *view,CGFloat radius) {
     _initializationSpinner=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _initializationSpinner.color=Accent(); _initializationSpinner.hidesWhenStopped=YES; [_canvas addSubview:_initializationSpinner];
     _initializeHint.numberOfLines=2; _initializeHint.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:_initializeHint];
+    qp_lifecycle_view_ready(&_lifecycle); [self scheduleActivation];
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews]; UIEdgeInsets safe=self.view.safeAreaInsets;
@@ -383,8 +388,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    if(!_host.length && !_didOfferSetup && !self.presentedViewController) { _didOfferSetup=YES; [self findConsole]; }
-    else [self resume];
+    [self scheduleActivation]; [self resume];
 }
 - (void)refresh {
     if(_ensureSession.active && _link.ready) [self cancelEnsureSession];
@@ -418,7 +422,11 @@ static void Round(UIView *view,CGFloat radius) {
     for(UIButton *button in _mediaButtons) { button.enabled=active; button.alpha=active?1:.3; }
     UIApplication.sharedApplication.idleTimerDisabled=NO;
     [self offerInitializationIfReady];
-    NSDictionary *record=@{@"phase":@(_initialization.phase),@"requests":@(_initializationRequests),@"init_sent":@(_initializationSends),
+    NSDictionary *record=@{@"session_id":_sessionIdentifier?:@"",@"process_id":@(NSProcessInfo.processInfo.processIdentifier),
+        @"host":_host?:@"",@"wants_connection":@(_wantsConnection),@"scene_active":@(_lifecycle.active),@"view_ready":@(_lifecycle.viewReady),
+        @"activation_queued":@(_lifecycle.queued),@"activation_started":@(_lifecycle.started),@"activation_generation":@(_lifecycle.generation),
+        @"activation_count":@(_lifecycle.activations),@"suspend_count":@(_lifecycle.suspends),@"activation_start_count":@(_lifecycle.starts),
+        @"blocked_reason":_lifecycleBlockedReason?:@"",@"phase":@(_initialization.phase),@"requests":@(_initializationRequests),@"init_sent":@(_initializationSends),
         @"service_loads":@(_initializationLoads),@"loaded_this_request":@(_initialization.loaded),@"allows_load":@(_initialization.allowLoad),
         @"auto_attempted":@(_autoInitializeAttempted),@"automatic_session_active":@(_ensureSession.active),
         @"automatic_connect_attempts":@(_ensureSession.attempts),@"automatic_service_loaded":@(_ensureSession.loaded),@"automatic_load_blocked":@(_ensureSession.loadBlocked),@"reused_controller":@(_reusedController),@"failure":_initializationFailure?:@"",@"updated_unix":@(NSDate.date.timeIntervalSince1970)};
@@ -431,9 +439,12 @@ static void Round(UIView *view,CGFloat radius) {
     qp_ensure_cancel(&_ensureSession); _ensureSessionGeneration++; _ensureSessionScheduled=NO;
 }
 - (void)startEnsureSession {
-    [self cancelEnsureSession];
-    if(!_host.length || !_wantsConnection || qp_initialization_pending(&_initialization) || _link.disconnectingController ||
-       UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    if(!_lifecycle.active || !_lifecycle.viewReady) { _lifecycleBlockedReason=@"Waiting for active scene and loaded view"; return; }
+    if(!_host.length || !_wantsConnection || qp_initialization_pending(&_initialization) || _link.disconnectingController) {
+        _lifecycleBlockedReason=!_host.length?@"No console selected":(!_wantsConnection?@"Connection disabled by user":@"Explicit controller action in progress");
+        [self refresh]; return;
+    }
+    [self cancelEnsureSession]; _lifecycleBlockedReason=@"";
     _reusedController=NO; _autoInitializeAttempted=NO;
     if(_link.ready) { [self offerInitializationIfReady]; return; }
     qp_ensure_begin(&_ensureSession); [self refresh];
@@ -445,7 +456,7 @@ static void Round(UIView *view,CGFloat radius) {
         if(generation!=self.ensureSessionGeneration) return;
         self.ensureSessionScheduled=NO;
         if(!self.wantsConnection || !self.host.length || qp_initialization_pending(&self->_initialization) || self.link.disconnectingController ||
-           UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { [self cancelEnsureSession]; return; }
+           !self->_lifecycle.active) { [self cancelEnsureSession]; return; }
         if(self.link.ready) { [self cancelEnsureSession]; [self refresh]; return; }
         if(self.link.connecting) {
             /* Adopt a connection already started during initial scene setup. */
@@ -462,7 +473,7 @@ static void Round(UIView *view,CGFloat radius) {
             if(generation!=self.ensureSessionGeneration) return;
             self.ensureSessionScheduled=NO;
             if(!self->_ensureSession.active || !self.wantsConnection || qp_initialization_pending(&self->_initialization) || self.link.disconnectingController ||
-               UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { [self cancelEnsureSession]; return; }
+               !self->_lifecycle.active) { [self cancelEnsureSession]; return; }
             if(self.link.ready) { [self cancelEnsureSession]; [self refresh]; return; }
             if(self.link.connecting) { [self scheduleEnsureSession]; return; }
             [self.link connectTo:self.host timeout:3];
@@ -474,7 +485,7 @@ static void Round(UIView *view,CGFloat radius) {
     _initializationWorkScheduled=YES;
     dispatch_async(dispatch_get_main_queue(),^{
         self.initializationWorkScheduled=NO;
-        if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { qp_initialization_cancel(&self->_initialization); return; }
+        if(!self->_lifecycle.active) { qp_initialization_cancel(&self->_initialization); return; }
         /* connectTo/loadServiceAt synchronously publish a temporary disconnect.
          * Reading on the next turn observes their completed state mutation. */
         QPInitAction action=qp_initialization_step(&self->_initialization,self.link.ready,self.link.connecting,
@@ -490,7 +501,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)beginInitializationAllowLoad:(BOOL)allowLoad {
     if(_link.disconnectingController) return;
-    if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    if(!_lifecycle.active) return;
     if(!_host.length) {
         if(self.presentedViewController) [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
         else [self findConsole];
@@ -507,7 +518,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)requestInitialization { [self beginInitializationAllowLoad:YES]; }
 - (void)offerInitializationIfReady {
-    if(!_wantsConnection || _link.disconnectingController || !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive ||
+    if(!_wantsConnection || _link.disconnectingController || !self.view.window || self.presentedViewController || !_lifecycle.active ||
        qp_initialization_pending(&_initialization)) return;
     if(qp_resume_reuses_controller(_link.ready,_link.controllerChecked,_link.padReady,_link.controlBusy)) {
         _needsInitializePrompt=NO;
@@ -523,7 +534,7 @@ static void Round(UIView *view,CGFloat radius) {
         self.initializePromptScheduled=NO;
         if(!self.needsInitializePrompt || !self.link.ready || !self.link.supportsControl || self.link.controlBusy ||
            qp_initialization_pending(&self->_initialization) || !self.view.window || self.presentedViewController ||
-           UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+           !self->_lifecycle.active) return;
         [self offerInitialization];
     });
 }
@@ -619,24 +630,47 @@ static void Round(UIView *view,CGFloat radius) {
     navigation.modalPresentationStyle=UIModalPresentationFullScreen;
     [self presentViewController:navigation animated:YES completion:nil];
 }
+- (void)scheduleActivation {
+    uint64_t generation=qp_lifecycle_queue_start(&_lifecycle);
+    if(!generation) return;
+    dispatch_async(dispatch_get_main_queue(),^{
+        if(!qp_lifecycle_take_start(&self->_lifecycle,generation)) return;
+        self.lifecycleBlockedReason=@"";
+        [self resumeAfterInterruption];
+        [self refresh];
+    });
+}
+- (void)activateScene {
+    qp_lifecycle_activate(&_lifecycle);
+    [self scheduleActivation];
+    if(_lifecycle.viewReady) [self refresh];
+}
 - (void)resume {
-    if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-    if(_host.length&&_wantsConnection&&self.isViewLoaded&&!self.presentedViewController&&!qp_initialization_pending(&_initialization)) {
-        if(_ensureSession.active) [self scheduleEnsureSession];
-        else if(!_link.ready&&!_link.connecting&&!_ensureSessionGeneration) [self startEnsureSession];
-    }
+    if(!_lifecycle.active || !_lifecycle.viewReady) return;
+    [self scheduleActivation];
+    if(!_host.length && !_didOfferSetup && !self.presentedViewController) { _didOfferSetup=YES; [self findConsole]; return; }
+    if(_host.length&&_wantsConnection&&!self.presentedViewController&&!qp_initialization_pending(&_initialization) && _ensureSession.active)
+        [self scheduleEnsureSession];
     [self offerInitializationIfReady];
 }
 - (void)resumeAfterInterruption {
-    if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-    _autoInitializeAttempted=NO;
+    if(!_lifecycle.active || !_lifecycle.viewReady) return;
+    if(!_host.length) { [self resume]; return; }
     /* Dismiss stale connection alerts, then reconnect to the existing pad.
      * Keep the discovery navigation controller and its editable address intact. */
     if([self.presentedViewController isKindOfClass:UIAlertController.class]) {
-        [self dismissViewControllerAnimated:NO completion:^{ [self startEnsureSession]; }];
+        uint64_t generation=_lifecycle.generation;
+        [self dismissViewControllerAnimated:NO completion:^{
+            if(qp_lifecycle_is_current(&self->_lifecycle,generation)) [self startEnsureSession];
+        }];
     } else [self startEnsureSession];
 }
-- (void)suspend { [self cancelEnsureSession]; qp_initialization_cancel(&_initialization); [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
+- (void)suspend {
+    qp_lifecycle_suspend(&_lifecycle); _lifecycleBlockedReason=@"Scene inactive";
+    [self cancelEnsureSession]; qp_initialization_cancel(&_initialization); [self clearControls];
+    [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO;
+}
+
 @end
 
 @interface QPSceneDelegate : UIResponder <UIWindowSceneDelegate>
@@ -652,7 +686,7 @@ static void Round(UIView *view,CGFloat radius) {
     _controller=[QPViewController new]; _window.rootViewController=_controller; [_window makeKeyAndVisible];
 }
 - (void)sceneWillResignActive:(UIScene *)scene { (void)scene; [_controller suspend]; }
-- (void)sceneDidBecomeActive:(UIScene *)scene { (void)scene; [_controller resumeAfterInterruption]; }
+- (void)sceneDidBecomeActive:(UIScene *)scene { (void)scene; [_controller activateScene]; }
 - (void)sceneDidDisconnect:(UIScene *)scene { (void)scene; [_controller suspend]; }
 @end
 
