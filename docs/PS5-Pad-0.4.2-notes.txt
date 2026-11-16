@@ -1,0 +1,19 @@
+PS5 Pad 0.4.2 (build 8)
+
+Fixes a reconnection edge case found during review of 0.4.1: if Initialize
+Controller or another connection prompt was left open while the app became
+inactive, the old prompt prevented reconnecting when the app returned.
+
+On reactivation the app dismisses its stale connection/Kodi prompts, reconnects
+when a connection is wanted, and offers a fresh Initialize Controller prompt.
+It preserves Find your PS5 and any address being entered there. Reconnection
+is guarded by the app's active state.
+
+Includes the 0.4.1 permission-first scan, faster address ordering/concurrency,
+initialization prompt and reminder. Same identity: com.uhnmeyker.ps5pad.
+No settings are seeded, migrated or reset. Controller service remains 2.1.
+System-wide contextual keyboard support is not included yet.
+
+Validation: existing protocol, input queue, UIKit selector and discovery checks;
+ARM64 build with warnings treated as errors and unsigned archive validation.
+The resume scenario needs on-device confirmation after this update is installed.

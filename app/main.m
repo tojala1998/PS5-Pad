@@ -348,8 +348,18 @@ static void Round(UIView *view,CGFloat radius) {
     [self presentViewController:navigation animated:YES completion:nil];
 }
 - (void)resume {
+    if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
     if(_host.length&&_wantsConnection&&!_link.ready&&!_link.connecting&&self.isViewLoaded&&!self.presentedViewController) [_link connectTo:_host];
     [self offerInitializationIfReady];
+}
+- (void)resumeAfterInterruption {
+    if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    /* Root alerts describe the old connection. Rebuild them after reconnecting;
+     * keep the discovery navigation controller and its editable address intact. */
+    if([self.presentedViewController isKindOfClass:UIAlertController.class]) {
+        _needsInitializePrompt=YES;
+        [self dismissViewControllerAnimated:NO completion:^{ [self resume]; }];
+    } else [self resume];
 }
 - (void)suspend { [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
 @end
@@ -368,7 +378,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)sceneWillResignActive:(UIScene *)scene { (void)scene; [_controller suspend]; }
 - (void)sceneDidEnterBackground:(UIScene *)scene { (void)scene; _controller.needsInitializePrompt=YES; }
-- (void)sceneDidBecomeActive:(UIScene *)scene { (void)scene; [_controller resume]; }
+- (void)sceneDidBecomeActive:(UIScene *)scene { (void)scene; [_controller resumeAfterInterruption]; }
 - (void)sceneDidDisconnect:(UIScene *)scene { (void)scene; [_controller suspend]; }
 @end
 
