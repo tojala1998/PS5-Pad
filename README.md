@@ -2,7 +2,7 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.0 IPA](releases/0.4.0/PS5-Pad-0.4.0-unsigned.ipa) Â· [Build notes](docs/PS5-Pad-0.4.0-notes.txt) Â· [Controller ELF](service/prebuilt/padd-controller-2.1.elf)
+[Download the unsigned 0.4.0 IPA](releases/0.4.0/PS5-Pad-0.4.0-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.0-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.1.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
