@@ -21,6 +21,12 @@ static inline int qp_same_state(QPState a, QPState b) {
 static inline void qp_input_reset(QPInputQueue *q) {
     memset(q,0,sizeof *q); q->target=q->sent=qp_neutral();
 }
+/* Cancellation must put a real neutral report on the wire before any new
+ * desired input, including a same-button repress queued behind an old ACK. */
+static inline void qp_input_release(QPInputQueue *q, double now) {
+    qp_input_reset(q);
+    q->events[0]=(QPInputEvent){qp_neutral(),now}; q->count=1;
+}
 static inline int qp_input_push(QPInputQueue *q, QPState state, double now) {
     if(qp_same_state(q->target,state)) return 1;
     if(q->count==QP_INPUT_CAPACITY) return 0;

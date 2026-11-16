@@ -1,0 +1,50 @@
+PS5 Pad 0.4.4 (build 10), controller service 2.3
+
+One-action initialization: checks the existing service, loads it at most once
+when needed, then sends one initialization request. Service / Controller / Done
+progress and error feedback replace the disconnected connect/load/init steps.
+The center status control and three-dot Initialize action start this sequence.
+Automatic initialization requires a fresh successful status check confirming
+that this service has no virtual controller. Physical ownership is not inferred.
+Pending work is canceled on background, disconnect, console change or failure.
+
+Face-button feedback now follows the PS5 service's successful report reply,
+including Cross on the swipe pad. Desired touches no longer animate before
+acceptance. Each registered rising edge gets a visible confirmation flash;
+held/heartbeat replies do not repeat it. Cancelled old replies cannot relight
+cleared controls. Controls no longer shrink their hit area, and the 18-point
+drag halo is removed so touch tracking and the visual area agree. A successful
+report confirms service acceptance, not that Kodi/profile routing acted on it.
+Cancelling and immediately pressing again now sends a real neutral report first,
+with a release gap. Lost controller readiness also clears pending input, so old
+presses cannot replay when the controller becomes ready again.
+
+Disconnect controller now asks service 2.3 to release and remove only its own
+virtual pad, waits for the response and then closes the phone connection. The
+service keeps running. Ordinary phone sleep/network loss still releases held
+buttons and preserves the pad, with neutral reports continuing on the console.
+There is no application-imposed ten-minute controller removal timer.
+
+iOS cannot guarantee a force-quit notification after suspension. A missed phone
+heartbeat cannot distinguish sleep from force-quit, so automatic cleanup on
+every app closure cannot be promised while preserving screen-lock sessions.
+Use Disconnect controller for a reliable explicit session end.
+
+The observed two-attempt flow in 0.4.3 involved a duplicate service load and only
+one actual initialization. Its timing change alone did not resolve that flow.
+A read-only PS5 event capture showed the old virtual pad removed during a
+service update and the replacement created and assigned to the signed-in user.
+It showed no later removal of that replacement. Neither that observation nor
+accepted neutral reports proves there is no console-side inactivity policy.
+No fake button presses or console settings changes were added.
+
+Bundle identity remains com.uhnmeyker.ps5pad. No settings are seeded or reset.
+Contextual keyboard remains research: typing was verified in Kodi, but automatic
+keyboard visibility was not. The temporary keyboard test was stopped. Future
+keyboard sessions must end on background/disconnect and independently expire.
+Controller persistence never permits persistent keyboard capture.
+
+Validation covers local initialization state transitions, queue/protocol checks,
+service session-end/failure/idle cleanup cases, native ARM64 compilation and
+unsigned archive integrity. Live first-attempt behavior, face-button feedback,
+sleep and explicit disconnect must be confirmed separately on the actual phone.

@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 import time
 import unittest
 
-from smoke_test import receive, send
+from smoke_test import receive, send, STATE
 
 PROGRAM = str(Path(sys.argv.pop(1)).resolve())
 STATUS = struct.Struct('<iiiiiIII')
@@ -19,18 +19,19 @@ PAD_READY = 1
 
 
 class Listener:
-    def __init__(self, **faults):
+    def __init__(self, daemon_args=(), **faults):
         self.temp = TemporaryDirectory()
         self.trace = Path(self.temp.name, 'trace.jsonl')
         with socket.socket() as reserved:
             reserved.bind(('127.0.0.1', 0))
             port = reserved.getsockname()[1]
+        self.port = port
         environment = {key: value for key, value in os.environ.items()
                        if not key.startswith('PADD_TEST_') and key not in ('PADD_FAIL_ADD', 'PADD_FAIL_ADD_USER')}
         environment.update({'PADD_TRACE': str(self.trace), 'PADD_TEST_ENFORCE_SINGLE_PAD': '1',
                             'PADD_TEST_TRACE_REPORTS': '1'})
         environment.update({key: str(value) for key, value in faults.items()})
-        self.process = subprocess.Popen([PROGRAM, '--port', str(port), '--log-dir', self.temp.name],
+        self.process = subprocess.Popen([PROGRAM, '--port', str(port), '--log-dir', self.temp.name, *daemon_args],
                                         env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         deadline = time.monotonic() + 3
         while True:
@@ -45,6 +46,14 @@ class Listener:
         kind, hello = receive(self.client)
         if kind != 1 or len(hello) != 20:
             raise RuntimeError('Host listener returned an invalid greeting')
+        self.hello = struct.unpack('<HHiiII', hello)
+
+    def reconnect(self):
+        self.client = socket.create_connection(('127.0.0.1', self.port), timeout=2)
+        kind, hello = receive(self.client)
+        if kind != 1 or len(hello) != 20:
+            raise RuntimeError('Host listener returned an invalid reconnect greeting')
+        self.hello = struct.unpack('<HHiiII', hello)
 
     def request(self, kind):
         send(self.client, kind)
@@ -168,6 +177,102 @@ class InitializationTests(unittest.TestCase):
             self.assertEqual(result[4], -1)
             self.assertEqual(listener.events('pad_report'), [])
             self.assertEqual(listener.events('pad_remove'), [])
+
+
+class SessionEndTests(unittest.TestCase):
+    def press(self, listener, sequence=42):
+        send(listener.client, 2, STATE.pack(sequence, 0x4000, 128, 128, 128, 128))
+        kind, ack = receive(listener.client)
+        self.assertEqual(kind, 4)
+        return struct.unpack('<Ii', ack)
+
+    def test_explicit_disconnect_is_idempotent_and_does_not_recreate(self):
+        with Listener() as listener:
+            self.assertEqual(listener.hello[1], 0x0203)
+            self.assertTrue(listener.hello[4] & 0x20000)
+            self.assertEqual(listener.request(132)[0], 0)
+            self.assertEqual(listener.events('pad_remove'), [])
+            initialized = listener.request(129)
+            handle = initialized[4]
+            self.assertEqual(self.press(listener), (42, 0))
+            send(listener.client, 132, b'invalid')
+            self.assertEqual(receive(listener.client)[0], 5)
+            self.assertEqual(listener.events('pad_remove'), [])
+            query_count = len(listener.events('controller_query'))
+            ended = listener.request(132)
+            self.assertEqual(ended[0], 0)
+            self.assertEqual(ended[4], -1)
+            self.assertFalse(ended[5] & PAD_READY)
+            events = listener.events()
+            removed_at = next(i for i, event in enumerate(events) if event['call'] == 'pad_remove')
+            final_report = events[removed_at - 1]
+            self.assertEqual(final_report['call'], 'pad_report')
+            self.assertEqual(final_report['handle'], handle)
+            self.assertEqual(final_report['buttons'], 0)
+            self.assertEqual(final_report['result'], 0)
+            self.assertEqual(listener.request(132)[0], 0)
+            self.assertEqual(self.press(listener, 43), (43, 6), 'Input cannot reopen an ended pad')
+            listener.client.close()
+            time.sleep(.1)
+            listener.reconnect()
+            self.assertEqual(listener.hello[2], -1)
+            self.assertFalse(listener.hello[4] & PAD_READY)
+            self.assertFalse(listener.request(128)[5] & PAD_READY)
+            self.assertEqual(len(listener.events('pad_add')), 1)
+            self.assertEqual([event['handle'] for event in listener.events('pad_remove')], [handle])
+            self.assertEqual(len(listener.events('controller_query')), query_count)
+            self.assertIsNone(listener.process.poll(), 'Session end must leave the service running')
+            self.assertEqual(listener.shutdown(), 0)
+            self.assertEqual(len(listener.events('pad_remove')), 1, 'Exit must not remove an already-ended handle')
+
+    def test_failed_disconnect_retains_owned_handle_for_retry(self):
+        with Listener(PADD_TEST_FAIL_REMOVE_COUNT=1) as listener:
+            initialized = listener.request(129)
+            handle = initialized[4]
+            failed = listener.request(132)
+            self.assertEqual(failed[0], errno.EIO)
+            self.assertEqual(failed[4], handle)
+            self.assertFalse(failed[5] & PAD_READY)
+            checked = listener.request(128)
+            self.assertEqual(checked[4], handle)
+            self.assertFalse(checked[5] & PAD_READY)
+            self.assertEqual(self.press(listener), (42, 6), 'Failed cleanup must remain unavailable for input')
+            retried = listener.request(132)
+            self.assertEqual(retried[0], 0)
+            self.assertEqual(retried[4], -1)
+            self.assertFalse(retried[5] & PAD_READY)
+            removed = listener.events('pad_remove')
+            self.assertEqual([event['handle'] for event in removed], [handle, handle])
+            self.assertEqual([event['result'] for event in removed], [errno.EIO, 0])
+            self.assertEqual(listener.request(132)[0], 0)
+            self.assertEqual(len(listener.events('pad_remove')), 2)
+            self.assertEqual(len(listener.events('pad_add')), 1)
+            self.assertEqual(listener.shutdown(), 0)
+
+    def test_eof_and_idle_timeout_preserve_pad_and_neutral_feed(self):
+        for reason in ('eof', 'idle'):
+            with self.subTest(reason=reason), Listener(daemon_args=('--watchdog-ms', '80', '--idle-ms', '500')) as listener:
+                initialized = listener.request(129)
+                handle = initialized[4]
+                self.assertEqual(self.press(listener), (42, 0))
+                if reason == 'eof':
+                    listener.client.close()
+                time.sleep(.75)  # Beyond both watchdog and client idle deadlines.
+                reports = listener.events('pad_report')
+                pressed_at = next(i for i, event in enumerate(reports) if event['buttons'] == 0x4000)
+                neutral_reports = [event for event in reports[pressed_at + 1:] if event['buttons'] == 0]
+                self.assertGreater(len(neutral_reports), 10)
+                self.assertGreaterEqual(neutral_reports[-1]['ms'] - neutral_reports[0]['ms'], 400)
+                self.assertTrue(all(event['handle'] == handle and event['result'] == 0 for event in neutral_reports))
+                self.assertEqual(listener.events('pad_remove'), [])
+                self.assertEqual(len(listener.events('pad_add')), 1)
+                listener.client.close()
+                listener.reconnect()
+                self.assertEqual(listener.hello[2], handle)
+                self.assertTrue(listener.hello[4] & PAD_READY)
+                self.assertTrue(listener.request(128)[5] & PAD_READY)
+                self.assertEqual(listener.events('pad_remove'), [])
+                self.assertEqual(listener.shutdown(), 0)
 
 
 if __name__ == '__main__':

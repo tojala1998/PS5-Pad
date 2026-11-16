@@ -2,7 +2,7 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.3 IPA](releases/0.4.3/PS5-Pad-0.4.3-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.3-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.2.elf)
+[Download the unsigned 0.4.4 IPA](releases/0.4.4/PS5-Pad-0.4.4-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.4-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.3.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
@@ -16,7 +16,11 @@ Version 0.4.1 separates Local Network permission from scanning and offers Initia
 
 Version 0.4.2 fixes resuming with a connection prompt still open: stale prompts are dismissed so the app can reconnect and offer a fresh Initialize Controller prompt. Discovery and its address-entry form are preserved. The unsigned build, USB transfer and standalone 0.4.2 installation are verified; this resume scenario still needs on-device confirmation.
 
-Version 0.4.3 clears stale success text during initialization, shows progress, handles initialization failures and labels the service connection separately from virtual-controller readiness. Service 2.2 adds an unconditional detach interval and verifies neutral reports before returning initialization success. Profile assignment remains a TV step; the reported two-attempt symptom needs live retesting. See the [build notes](docs/PS5-Pad-0.4.3-notes.txt).
+Version 0.4.3 clears stale success text during initialization, shows progress, handles initialization failures and labels the service connection separately from virtual-controller readiness. Service 2.2 adds an unconditional detach interval and verifies neutral reports before returning initialization success. Profile assignment remains a TV step; the owner still reported two attempts in 0.4.3. Its logs showed one initialization plus a duplicate service-load attempt, identifying a separate connection-flow problem. See the [build notes](docs/PS5-Pad-0.4.3-notes.txt).
+
+Version 0.4.4 adds one-action initialization with a compact Service → Controller → Done progress strip. It checks the existing service, loads it at most once if needed, and initializes once. It automatically initializes after a successful status check reports no PS5 Pad virtual controller; this is not detection of physical-controller ownership. Pending work cancels on background, disconnect, console change or failure. Service 2.3 adds an explicit **Disconnect controller** command. The revised end-to-end flow needs live validation.
+
+Button feedback follows a matching, successful controller-report acknowledgment. Each face button (including the swipe pad's Cross) flashes only for its own registered press; repeated neutral/held reports do not retrigger feedback. The hit area stays fixed, and drag tracking uses the same bounds as the painted control. Short confirmed presses remain visible even when their release follows immediately. Confirmation means the service accepted the HID report, not proof that the TV profile or Kodi acted on it.
 
 A fresh installation opens Find your PS5 and checks Local Network access before enabling Scan Wi-Fi. Allow the iOS prompt, then scan, select a detected console and tap Add PS5. Access is confirmed by discovering a unique temporary Bonjour service; a timeout or failed connection never counts as permission granted. No console scan starts during the permission check.
 
@@ -24,9 +28,33 @@ Discovery checks the attached IPv4 subnet (the nearest /24 on larger networks). 
 
 “PS5 Pad service available” means the app received a valid PMCP greeting with the PS5 Pad control capability from TCP port 9305. An open port alone is insufficient. A recognized busy-service reply appears separately. Discovery sends no input, initialization or app-launch commands; service availability does not establish controller ownership.
 
-After adding a console, the app offers Initialize Controller once the service connects. It also offers this when returning from the background. Initialization remains an explicit button press, with an explanation that it must be repeated when another controller takes over. Conditional help above the media controls points to **••• → Initialize Controller**. It does not claim that takeover was detected. Automatic controller-ownership detection, full account synchronization, authenticated pairing and foreground-app detection are not implemented. The service is for a trusted LAN and currently accepts unauthenticated connections.
+After adding a console or resuming, the app checks the service. A successful status check showing no PS5 Pad virtual controller permits one automatic initialization attempt. If a virtual controller already exists, taking control again remains an explicit Initialize action. Conditional help points to **••• → Initialize Controller**; it does not claim that takeover was detected. Automatic controller-ownership detection, full account synchronization, authenticated pairing and foreground-app detection are not implemented. The service is for a trusted LAN and currently accepts unauthenticated connections.
 
 System-wide contextual text entry is under [investigation](docs/keyboard-research.md). A separate [keyboard test ELF](experiments/keyboard-probe/README.txt) successfully typed into Kodi on firmware 13.60, with the exact text confirmed on the TV. It reuses ProsperoSunshine's native keyboard code and requires no Remote Play or stream. Automatic PS5 keyboard-open/close detection has not been established, and keyboard input is not yet included in the iPhone app.
+
+## Sleep and controller sessions
+
+The PS5 service owns the virtual controller separately from the phone connection.
+It continues neutral reports during phone sleep and has no ten-minute removal
+timer. Leaving the app releases held input and closes its network connection.
+**Disconnect controller** explicitly removes only PS5 Pad's controller after
+the PS5 acknowledges the request; it leaves the service running.
+
+iOS does not guarantee a callback when a suspended app is force-closed, and may
+close network connections during suspension. Therefore loss of TCP or missed
+heartbeats cannot reliably distinguish screen lock from force-quit. Preserving
+sleep means the virtual controller may survive force-quit until explicitly
+disconnected. No continuous background-execution or automatic force-quit cleanup
+guarantee is claimed. See [Apple's networking clarification](https://developer.apple.com/forums/thread/840808)
+and [termination callback documentation](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
+
+Neutral-report success is not proof that the console still routes input to the
+pad. The owner reported a disconnect while the app was open. A bounded console
+log read identified the old service's controller removal during an update and
+the replacement's creation/assignment; it did not identify a later replacement
+removal. A console-side inactivity policy has not been established or disabled.
+No synthetic keep-awake button presses, console settings changes or guessed
+power-control calls are used.
 
 ## Build an unsigned IPA on Windows
 
@@ -49,7 +77,7 @@ The script uses a fresh `work/` directory, runs input/wire tests, compiles with 
 The USB transfer needs an already trusted iPhone, LiveContainer, and a Python environment with `pymobiledevice3` installed. It copies the IPA into LiveContainer's Documents folder and reads it back to verify the bytes. It does not sign, install, launch apps, change phone settings or modify the Home Screen.
 
 ```powershell
-.\Transfer-IPA.ps1 -Ipa .\releases\0.4.3\PS5-Pad-0.4.3-unsigned.ipa
+.\Transfer-IPA.ps1 -Ipa .\releases\0.4.4\PS5-Pad-0.4.4-unsigned.ipa
 # Or build and transfer:
 .\Build.ps1 -IosSdk 'C:\path\to\iPhoneOS16.5.sdk' -Transfer
 ```
@@ -60,7 +88,7 @@ Use SideStore separately to sign and update the app. The display name is PS5 Pad
 
 ## Console service
 
-Upload `service/prebuilt/padd-controller-2.2.elf` to Payload Manager and load it if it is not already running. It listens on TCP 9305, starts in standby and creates its controller only after an explicit Initialize request. It assumes the console is already jailbroken; neither the iPhone app nor the service performs a jailbreak.
+Upload `service/prebuilt/padd-controller-2.3.elf` to Payload Manager and load it if it is not already running. It listens on TCP 9305, starts in standby and creates its controller only after an explicit Initialize request. It assumes the console is already jailbroken; neither the iPhone app nor the service performs a jailbreak.
 
 The source and its original license are under `service/`. Build with [PS5 Payload SDK v0.43](https://github.com/ps5-payload-dev/sdk/releases/tag/v0.43):
 

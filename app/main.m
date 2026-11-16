@@ -4,6 +4,8 @@
 #import "QPConnection.h"
 #import "QPKodi.h"
 #import "QPDiscovery.h"
+#import "QPInitialization.h"
+#import "QPInputFeedback.h"
 
 static UIColor *Color(unsigned rgb) {
     return [UIColor colorWithRed:((rgb>>16)&255)/255.0 green:((rgb>>8)&255)/255.0 blue:(rgb&255)/255.0 alpha:1];
@@ -18,44 +20,92 @@ static void Round(UIView *view,CGFloat radius) {
     view.layer.borderWidth=1; view.layer.borderColor=Color(0x293039).CGColor;
 }
 
-@interface QPButton : UIControl
+@interface QPButton : UIControl {
+    QPButtonFeedback _feedback;
+    BOOL _trackingPress;
+    NSUInteger _desiredGeneration;
+}
 @property(nonatomic) uint32_t mask;
 @property(nonatomic) NSInteger edge;
 @property(nonatomic) BOOL down;
 @property(nonatomic,copy) NSString *glyph;
 @property(nonatomic,strong) UIColor *ink;
 @property(nonatomic,copy) void (^changed)(void);
+@property(nonatomic,copy) void (^cancelled)(void);
+- (void)acknowledgeDown:(BOOL)down;
+- (void)clearFeedback;
 - (void)clear;
 @end
 @implementation QPButton
 - (instancetype)init {
     if((self=[super init])) {
         self.backgroundColor=UIColor.clearColor; self.opaque=NO; self.clipsToBounds=YES;
+        self.contentMode=UIViewContentModeRedraw;
         _ink=Color(0xD8DEE7); Round(self,14); self.layer.borderWidth=0;
         self.isAccessibilityElement=YES; self.accessibilityTraits=UIAccessibilityTraitButton;
     } return self;
 }
 - (void)setDown:(BOOL)down {
     if(_down==down) return; _down=down;
-    self.backgroundColor=[_glyph isEqual:@"PS"]?(down?Color(0xA4C5FA):UIColor.whiteColor):(down?Color(0x292D35):UIColor.clearColor);
-    self.layer.borderColor=(down?Accent():Color(0x293039)).CGColor;
-    self.transform=down?CGAffineTransformMakeScale(.95,.95):CGAffineTransformIdentity;
-    if(down) { UIImpactFeedbackGenerator *h=[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleSoft]; [h impactOccurred]; }
-    self.accessibilityValue=down?@"Pressed":@"Released";
-    [self setNeedsDisplay]; if(_changed) _changed();
+    /* Desired input never paints or vibrates; the matching service ACK does. */
+    if(_changed) _changed();
+}
+- (void)refreshFeedback {
+    BOOL lit=qp_feedback_visible(&_feedback,CACurrentMediaTime());
+    self.backgroundColor=[_glyph isEqual:@"PS"]?(lit?Color(0xA4C5FA):UIColor.whiteColor):(lit?Color(0x292D35):UIColor.clearColor);
+    self.layer.borderColor=(lit?Accent():Color(0x293039)).CGColor;
+    self.accessibilityValue=_feedback.acknowledgedDown?@"Registered":@"Released";
+    [self setNeedsDisplay];
+}
+- (void)acknowledgeDown:(BOOL)down {
+    BOOL previous=_feedback.acknowledgedDown;
+    BOOL rising=qp_feedback_acknowledge(&_feedback,down,CACurrentMediaTime());
+    if(previous==down && !rising) return;
+    [self refreshFeedback];
+    if(!rising) return;
+    /* Animate only the paint, never the UIControl's geometry. Each rising edge
+     * restarts this flash even when a fast repeat overlaps the preceding one. */
+    CABasicAnimation *flash=[CABasicAnimation animationWithKeyPath:@"backgroundColor"];
+    flash.fromValue=(__bridge id)([_glyph isEqual:@"PS"]?Color(0xE4EFFF):Color(0x42618A)).CGColor;
+    flash.toValue=(__bridge id)self.backgroundColor.CGColor; flash.duration=QP_FEEDBACK_FLASH_SECONDS;
+    [self.layer addAnimation:flash forKey:@"registeredPress"];
+    UIImpactFeedbackGenerator *h=[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleSoft]; [h impactOccurred];
+    uint64_t generation=_feedback.generation; __weak QPButton *weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(QP_FEEDBACK_FLASH_SECONDS*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        QPButton *button=weakSelf;
+        if(button && qp_feedback_timer_is_current(&button->_feedback,generation)) [button refreshFeedback];
+    });
+}
+- (void)clearFeedback {
+    qp_feedback_reset(&_feedback); [self.layer removeAnimationForKey:@"registeredPress"]; [self refreshFeedback];
 }
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)touch; (void)event; if(!self.enabled) return NO; self.down=YES; return YES;
+    if(!self.enabled || ![self pointInside:[touch locationInView:self] withEvent:event]) return NO;
+    _trackingPress=YES; _desiredGeneration++; self.down=YES; return YES;
 }
 - (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    (void)event; self.down=CGRectContainsPoint(CGRectInset(self.bounds,-18,-18),[touch locationInView:self]); return YES;
+    if(!self.enabled || !_trackingPress) return NO;
+    self.down=[self pointInside:[touch locationInView:self] withEvent:event]; return YES;
 }
-- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event { (void)touch; (void)event; self.down=NO; }
-- (void)cancelTrackingWithEvent:(UIEvent *)event { (void)event; self.down=NO; }
-- (void)clear { self.down=NO; }
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    (void)touch; (void)event; _trackingPress=NO; _desiredGeneration++; self.down=NO;
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    (void)event; _trackingPress=NO; _desiredGeneration++; self.down=NO; [self clearFeedback];
+    if(_cancelled) _cancelled();
+}
+- (void)clear {
+    /* The owner releases the aggregate report; do not queue intermediate chords
+     * while it is clearing several controls or disabling the connection. */
+    _down=NO; _trackingPress=NO; _desiredGeneration++; [self clearFeedback];
+}
 - (BOOL)accessibilityActivate {
-    if(!self.enabled) return NO; self.down=YES;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,120*NSEC_PER_MSEC),dispatch_get_main_queue(),^{self.down=NO;}); return YES;
+    if(!self.enabled) return NO;
+    if(_down) self.down=NO;
+    NSUInteger generation=++_desiredGeneration; self.down=YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,120*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        if(generation==self->_desiredGeneration) self.down=NO;
+    }); return YES;
 }
 - (void)drawRect:(CGRect)rect {
     (void)rect; CGFloat x=CGRectGetMidX(self.bounds),y=CGRectGetMidY(self.bounds),r=11;
@@ -81,12 +131,18 @@ static void Round(UIView *view,CGFloat radius) {
 @end
 
 
-@interface QPSwipePad : UIView
+@interface QPSwipePad : UIView {
+    QPButtonFeedback _crossFeedback;
+    uint32_t _acknowledgedDirections;
+}
 @property(nonatomic,copy) void (^pulse)(uint32_t);
+@property(nonatomic,copy) void (^cancelled)(void);
 @property(nonatomic) BOOL active;
 @property(nonatomic,strong) UILabel *hint,*sub,*cross;
 @property(nonatomic,strong) UIView *cursor;
 @property(nonatomic) CFTimeInterval lastStep;
+- (void)acknowledgeButtons:(uint32_t)buttons;
+- (void)clearFeedback;
 - (void)reset;
 @end
 @implementation QPSwipePad
@@ -94,6 +150,7 @@ static void Round(UIView *view,CGFloat radius) {
     if((self=[super init])) {
         self.backgroundColor=UIColor.clearColor;
         _cross=Label(@"×",35,UIFontWeightMedium,Color(0x9DBFF3));
+        _cross.layer.cornerRadius=12; _cross.clipsToBounds=YES;
         _hint=Label(@"Swipe to navigate.",13,UIFontWeightSemibold,Color(0xB3B3B3));
         _sub=Label(@"Tap to select.",13,UIFontWeightSemibold,Color(0xB3B3B3));
         for(UILabel *label in @[_cross,_hint,_sub]) { label.textAlignment=NSTextAlignmentCenter; [self addSubview:label]; }
@@ -115,10 +172,40 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)layoutSubviews {
     [super layoutSubviews]; CGFloat w=self.bounds.size.width,y=self.bounds.size.height/2;
-    _cross.frame=CGRectMake(0,y-47,w,40); _hint.frame=CGRectMake(0,y-2,w,20); _sub.frame=CGRectMake(0,y+15,w,20);
+    _cross.frame=CGRectMake(w/2-24,y-47,48,40); _hint.frame=CGRectMake(0,y-2,w,20); _sub.frame=CGRectMake(0,y+15,w,20);
 }
-- (void)setActive:(BOOL)active { _active=active; self.alpha=active?1:.45; if(!active) [self reset]; }
-- (void)emit:(uint32_t)mask { if(!_active||!_pulse) return; _pulse(mask); [[UISelectionFeedbackGenerator new] selectionChanged]; }
+- (void)setActive:(BOOL)active {
+    _active=active; self.alpha=active?1:.45; if(!active) { [self reset]; [self clearFeedback]; }
+}
+- (void)refreshCrossFeedback {
+    BOOL lit=qp_feedback_visible(&_crossFeedback,CACurrentMediaTime());
+    _cross.backgroundColor=lit?Color(0x292D35):UIColor.clearColor;
+    _cross.textColor=lit?UIColor.whiteColor:Color(0x9DBFF3);
+    self.accessibilityValue=_crossFeedback.acknowledgedDown?@"Cross registered":@"Released";
+}
+- (void)acknowledgeButtons:(uint32_t)buttons {
+    BOOL previous=_crossFeedback.acknowledgedDown;
+    BOOL cross=qp_feedback_acknowledge(&_crossFeedback,(buttons&QP_CROSS)!=0,CACurrentMediaTime());
+    uint32_t directions=buttons&(QP_UP|QP_DOWN|QP_LEFT|QP_RIGHT);
+    uint32_t risingDirections=directions&~_acknowledgedDirections; _acknowledgedDirections=directions;
+    if(previous!=_crossFeedback.acknowledgedDown || cross) [self refreshCrossFeedback];
+    if(cross || risingDirections) [[UISelectionFeedbackGenerator new] selectionChanged];
+    if(!cross) return;
+    CABasicAnimation *flash=[CABasicAnimation animationWithKeyPath:@"backgroundColor"];
+    flash.fromValue=(__bridge id)Color(0x42618A).CGColor;
+    flash.toValue=(__bridge id)_cross.backgroundColor.CGColor; flash.duration=QP_FEEDBACK_FLASH_SECONDS;
+    [_cross.layer addAnimation:flash forKey:@"registeredPress"];
+    uint64_t generation=_crossFeedback.generation; __weak QPSwipePad *weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(QP_FEEDBACK_FLASH_SECONDS*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        QPSwipePad *pad=weakSelf;
+        if(pad && qp_feedback_timer_is_current(&pad->_crossFeedback,generation)) [pad refreshCrossFeedback];
+    });
+}
+- (void)clearFeedback {
+    qp_feedback_reset(&_crossFeedback); _acknowledgedDirections=0;
+    [_cross.layer removeAnimationForKey:@"registeredPress"]; [self refreshCrossFeedback];
+}
+- (void)emit:(uint32_t)mask { if(!_active||!_pulse) return; _pulse(mask); }
 - (void)tap:(UITapGestureRecognizer *)gesture { if(gesture.state==UIGestureRecognizerStateRecognized) [self emit:QP_CROSS]; }
 - (void)pan:(UIPanGestureRecognizer *)gesture {
     if(!_active) return;
@@ -129,7 +216,10 @@ static void Round(UIView *view,CGFloat radius) {
             [self emit:fabs(d.x)>fabs(d.y)?(d.x>0?QP_RIGHT:QP_LEFT):(d.y>0?QP_DOWN:QP_UP)];
             _lastStep=CACurrentMediaTime(); [gesture setTranslation:CGPointZero inView:self];
         }
-    } else [self reset];
+    } else {
+        [self reset];
+        if((gesture.state==UIGestureRecognizerStateCancelled || gesture.state==UIGestureRecognizerStateFailed) && _cancelled) _cancelled();
+    }
 }
 - (void)reset { _cursor.alpha=0; }
 - (BOOL)accessibilityActivate { [self emit:QP_CROSS]; return _active; }
@@ -139,7 +229,9 @@ static void Round(UIView *view,CGFloat radius) {
 - (BOOL)accessRight { [self emit:QP_RIGHT]; return _active; }
 @end
 
-@interface QPViewController : UIViewController
+@interface QPViewController : UIViewController {
+    QPInitialization _initialization;
+}
 @property(nonatomic,strong) QPConnection *link;
 @property(nonatomic,strong) UIView *canvas;
 @property(nonatomic,strong) UILabel *titleLabel,*statusLabel,*result;
@@ -154,6 +246,12 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic) BOOL didOfferSetup;
 @property(nonatomic) BOOL needsInitializePrompt,initializePromptScheduled;
 @property(nonatomic) BOOL showingLinkProgress;
+@property(nonatomic) BOOL initializationWorkScheduled,autoInitializeAttempted;
+@property(nonatomic) NSUInteger initializationRequests,initializationSends,initializationLoads;
+@property(nonatomic,copy) NSString *initializationFailure;
+@property(nonatomic,strong) UIStackView *initializationProgress;
+@property(nonatomic,strong) NSArray<UILabel *> *initializationSteps;
+@property(nonatomic,strong) UIActivityIndicatorView *initializationSpinner;
 @property(nonatomic,strong) UILabel *initializeHint;
 - (void)resume;
 - (void)suspend;
@@ -172,6 +270,8 @@ static void Round(UIView *view,CGFloat radius) {
     QPButton *button=[QPButton new]; button.glyph=glyph; button.mask=mask; button.ink=Color(color);
     button.edge=edge; button.accessibilityLabel=label;
     __weak QPViewController *weakSelf=self; button.changed=^{[weakSelf updateState];};
+    /* UIKit cancellation ends this input session; normal touch-end does not. */
+    button.cancelled=^{[weakSelf clearControls];};
     [_buttons addObject:button]; [_canvas addSubview:button]; return button;
 }
 - (void)viewDidLoad {
@@ -183,9 +283,33 @@ static void Round(UIView *view,CGFloat radius) {
     _wantsConnection=![NSProcessInfo.processInfo.arguments containsObject:@"--offline"];
     __weak QPViewController *weakSelf=self;
     _link.changed=^{[weakSelf refresh];};
+    _link.inputAcknowledged=^(uint32_t buttons) {
+        QPViewController *self=weakSelf; if(!self) return;
+        for(QPButton *button in self.buttons) [button acknowledgeDown:(buttons&button.mask)!=0];
+        [self.swipe acknowledgeButtons:buttons];
+    };
+    _link.inputFeedbackReset=^{
+        QPViewController *self=weakSelf; if(!self) return;
+        for(QPButton *button in self.buttons) [button clearFeedback];
+        [self.swipe clearFeedback];
+    };
     _link.completed=^(NSString *action,int32_t status) {
         QPViewController *self=weakSelf; if(!self) return;
-        if([action isEqual:@"initialize"]) self.result.text=self.link.message;
+        if([action isEqual:@"initialize"]) {
+            if(self.link.disconnectingController) return;
+            qp_initialization_complete(&self->_initialization,status==0);
+            self.initializationFailure=status?self.link.message:nil;
+            self.result.text=self.link.message;
+        } else if([action isEqual:@"disconnect_controller"]) {
+            qp_initialization_cancel(&self->_initialization); self.showingLinkProgress=YES;
+            self.result.text=self.link.message;
+        } else if([action isEqual:@"check"]) {
+            self.autoInitializeAttempted=YES;
+            if(qp_initialization_pending(&self->_initialization)) {
+                qp_initialization_complete(&self->_initialization,NO); self.initializationFailure=self.link.message;
+            }
+            self.result.text=self.link.message;
+        }
         else if(status) self.result.text=[NSString stringWithFormat:@"%@ failed (0x%08X)",action,(unsigned)status];
         else self.result.text=[NSString stringWithFormat:@"%@ launch requested",action];
     };
@@ -200,14 +324,15 @@ static void Round(UIView *view,CGFloat radius) {
     _statusLabel=Label(@"Connecting…",12,UIFontWeightRegular,Color(0xA5A5A5));
     for(UILabel *label in @[_titleLabel,_statusLabel]) { label.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:label]; }
     _consoleButton=[UIButton buttonWithType:UIButtonTypeCustom]; _consoleButton.accessibilityLabel=@"Initialize PS5 controller";
-    [_consoleButton addTarget:self action:@selector(initialize) forControlEvents:UIControlEventTouchUpInside]; [_canvas addSubview:_consoleButton];
+    [_consoleButton addTarget:self action:@selector(requestInitialization) forControlEvents:UIControlEventTouchUpInside]; [_canvas addSubview:_consoleButton];
     [self padButton:@"L1" label:@"L1" mask:QP_L1 color:0xBBBBBB edge:0];
     [self padButton:@"touchpad" label:@"Touchpad click" mask:QP_TOUCH color:0xEEEEEE edge:0];
     QPButton *ps=[self padButton:@"PS" label:@"PS button; hold for home" mask:QP_PS color:0x171717 edge:0];
     ps.backgroundColor=UIColor.whiteColor; ps.layer.cornerRadius=30;
     [self padButton:@"options" label:@"Options" mask:QP_OPTIONS color:0xEEEEEE edge:0];
     [self padButton:@"R1" label:@"R1" mask:QP_R1 color:0xBBBBBB edge:0];
-    _swipe=[QPSwipePad new]; _swipe.pulse=^(uint32_t mask){[weakSelf pulse:mask];}; [_canvas addSubview:_swipe];
+    _swipe=[QPSwipePad new]; _swipe.pulse=^(uint32_t mask){[weakSelf pulse:mask];};
+    _swipe.cancelled=^{[weakSelf clearControls];}; [_canvas addSubview:_swipe];
     [self padButton:@"triangle" label:@"Triangle" mask:QP_TRIANGLE color:0x56BDA3 edge:-1];
     [self padButton:@"square" label:@"Square" mask:QP_SQUARE color:0xCB8BC4 edge:-1];
     [self padButton:@"circle" label:@"Circle / Back" mask:QP_CIRCLE color:0xD86B77 edge:1];
@@ -220,6 +345,16 @@ static void Round(UIView *view,CGFloat radius) {
     _result=Label(@"",10,UIFontWeightRegular,Color(0xAAAAAA)); _result.textAlignment=NSTextAlignmentCenter;
     _result.numberOfLines=2; [_canvas addSubview:_result]; [self refresh];
     _initializeHint=Label(@"If another controller takes over, use ••• → Initialize Controller.",11,UIFontWeightRegular,Color(0x999999));
+    NSMutableArray<UILabel *> *steps=[NSMutableArray array];
+    for(NSString *title in @[@"Service",@"Controller",@"Done"]) {
+        UILabel *step=Label(title,11,UIFontWeightMedium,Color(0xA5A5A5)); step.textAlignment=NSTextAlignmentCenter; [steps addObject:step];
+    }
+    _initializationSteps=steps;
+    _initializationProgress=[[UIStackView alloc] initWithArrangedSubviews:steps];
+    _initializationProgress.axis=UILayoutConstraintAxisHorizontal; _initializationProgress.distribution=UIStackViewDistributionFillEqually;
+    _initializationProgress.hidden=YES; [_canvas addSubview:_initializationProgress];
+    _initializationSpinner=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    _initializationSpinner.color=Accent(); _initializationSpinner.hidesWhenStopped=YES; [_canvas addSubview:_initializationSpinner];
     _initializeHint.numberOfLines=2; _initializeHint.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:_initializeHint];
 }
 - (void)viewDidLayoutSubviews {
@@ -238,6 +373,8 @@ static void Round(UIView *view,CGFloat radius) {
     _buttons[6].frame=CGRectMake(1,top+area/2+4,55,area/2-4);
     _buttons[7].frame=CGRectMake(w-56,top,55,area);
     _initializeHint.frame=CGRectMake(35,h-118,w-70,38);
+    _initializationProgress.frame=CGRectMake(25,h-112,w-50,26);
+    _initializationSpinner.frame=CGRectMake(3,h-22,18,18);
     CGFloat unit=(w-28)/5;
     for(NSUInteger i=0;i<_mediaButtons.count;i++) _mediaButtons[i].frame=CGRectMake(14+i*unit,h-75,unit,52);
     _result.frame=CGRectMake(20,h-24,w-40,24);
@@ -248,27 +385,89 @@ static void Round(UIView *view,CGFloat radius) {
     else [self resume];
 }
 - (void)refresh {
-    _statusLabel.text=_link.controlBusy?_link.message:(_link.ready?(_link.padReady?@"Virtual controller ready":@"Service connected · use •••"):
-        (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5")));
-    if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
+    if(_initialization.phase==QP_INIT_DONE && (!_link.ready || !_link.padReady)) { qp_initialization_cancel(&_initialization); _showingLinkProgress=YES; }
+    BOOL pending=qp_initialization_pending(&_initialization);
+    NSString *progress=nil;
+    if(_initialization.phase==QP_INIT_WAITING) progress=_link.ready?@"Checking controller…":(_initialization.loaded?@"Starting service…":@"Connecting to service…");
+    else if(_initialization.phase==QP_INIT_SENT) progress=@"Initializing controller…";
+    else if(_initialization.phase==QP_INIT_DONE) progress=@"Ready. Select your profile on the TV if asked.";
+    else if(_initialization.phase==QP_INIT_FAILED) progress=_initializationFailure?:_link.message;
+    _statusLabel.text=_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.padReady?@"Virtual controller ready":@"Service connected · use •••"):
+        (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5")))));
+    if(progress) _result.text=progress;
+    else if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
     else if(_showingLinkProgress) { _showingLinkProgress=NO; _result.text=_link.message; }
-    _consoleButton.accessibilityValue=_statusLabel.text;
-    BOOL active=_link.ready&&_link.padReady&&!_link.controlBusy; _swipe.active=active;
+    _initializationProgress.hidden=_initialization.phase==QP_INIT_IDLE; _initializeHint.hidden=!_initializationProgress.hidden;
+    NSUInteger stage=_initialization.phase==QP_INIT_DONE?3:(_initialization.phase==QP_INIT_SENT?1:0);
+    if(_initialization.phase==QP_INIT_FAILED) stage=_link.ready?1:0;
+    NSArray<NSString *> *names=@[stage>0?@"Service ready":(_initialization.loaded?@"Starting service":@"Service"),@"Controller",@"Done"];
+    for(NSUInteger i=0;i<_initializationSteps.count;i++) {
+        NSString *mark=i<stage?@"✓":(i==stage?(_initialization.phase==QP_INIT_FAILED?@"!":@"●"):@"○");
+        _initializationSteps[i].text=[NSString stringWithFormat:@"%@ %@",mark,names[i]];
+        _initializationSteps[i].textColor=(i==stage&&_initialization.phase==QP_INIT_FAILED)?Color(0xF08D8D):(i<=stage?Accent():Color(0x777777));
+    }
+    if(pending || _link.disconnectingController) [_initializationSpinner startAnimating]; else [_initializationSpinner stopAnimating];
+    _consoleButton.accessibilityValue=_statusLabel.text; _consoleButton.enabled=!_link.disconnectingController;
+    BOOL active=_wantsConnection&&_link.ready&&_link.padReady&&!_link.controlBusy&&!_link.disconnectingController&&!pending; _swipe.active=active;
     for(QPButton *button in _buttons) { button.enabled=active; button.alpha=active?1:.35; if(!active) [button clear]; }
     if(!active) { _pulseMask=0; _pulseGeneration++; }
     for(UIButton *button in _mediaButtons) { button.enabled=active; button.alpha=active?1:.3; }
-    UIApplication.sharedApplication.idleTimerDisabled=_link.ready;
+    UIApplication.sharedApplication.idleTimerDisabled=NO;
+    NSDictionary *record=@{@"phase":@(_initialization.phase),@"requests":@(_initializationRequests),@"init_sent":@(_initializationSends),
+        @"service_loads":@(_initializationLoads),@"loaded_this_request":@(_initialization.loaded),@"allows_load":@(_initialization.allowLoad),
+        @"auto_attempted":@(_autoInitializeAttempted),@"failure":_initializationFailure?:@"",@"updated_unix":@(NSDate.date.timeIntervalSince1970)};
+    NSString *file=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"PS5Pad-initialization.json"];
+    [[NSJSONSerialization dataWithJSONObject:record options:NSJSONWritingPrettyPrinted error:nil] writeToFile:file atomically:YES];
+    [self scheduleInitialization];
     [self offerInitializationIfReady];
 }
+- (void)scheduleInitialization {
+    if(!qp_initialization_pending(&_initialization) || _initializationWorkScheduled) return;
+    _initializationWorkScheduled=YES;
+    dispatch_async(dispatch_get_main_queue(),^{
+        self.initializationWorkScheduled=NO;
+        if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { qp_initialization_cancel(&self->_initialization); return; }
+        /* connectTo/loadServiceAt synchronously publish a temporary disconnect.
+         * Reading on the next turn observes their completed state mutation. */
+        QPInitAction action=qp_initialization_step(&self->_initialization,self.link.ready,self.link.connecting,
+            self.link.controlBusy,self.link.supportsControl,self.link.failureKind==QPConnectionFailureUnavailable);
+        if(action==QP_INIT_CONNECT) [self.link connectTo:self.host timeout:3];
+        else if(action==QP_INIT_LOAD) { self.initializationLoads++; [self.link loadServiceAt:self.host]; }
+        else if(action==QP_INIT_SEND) { self.initializationSends++; [self.link initializeController]; }
+        else if(action==QP_INIT_FAIL) {
+            self.initializationFailure=self.link.ready&&!self.link.supportsControl?@"This service does not support initialization.":self.link.message;
+            [self refresh];
+        }
+    });
+}
+- (void)beginInitializationAllowLoad:(BOOL)allowLoad {
+    if(_link.disconnectingController) return;
+    if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    if(!_host.length) {
+        if(self.presentedViewController) [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
+        else [self findConsole];
+        return;
+    }
+    if(!qp_initialization_request(&_initialization,allowLoad)) return;
+    _initializationRequests++; [_link limitConnectWait:3];
+    _autoInitializeAttempted=YES; _needsInitializePrompt=NO; _initializationFailure=nil; _wantsConnection=YES;
+    [self clearControls]; [self refresh];
+}
+- (void)requestInitialization { [self beginInitializationAllowLoad:YES]; }
 - (void)offerInitializationIfReady {
-    if(!_needsInitializePrompt || _initializePromptScheduled || !_link.ready || !_link.supportsControl || _link.controlBusy ||
-       !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    if(!_wantsConnection || _link.disconnectingController || !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive ||
+       qp_initialization_pending(&_initialization)) return;
+    if(qp_should_auto_initialize(_autoInitializeAttempted,_link.ready,_link.controllerChecked,_link.padReady,_link.controlBusy,_link.supportsControl,(int)_link.userStatus)) {
+        [self beginInitializationAllowLoad:NO]; return;
+    }
+    if(!_needsInitializePrompt || _initializePromptScheduled || !_link.ready || !_link.supportsControl || _link.controlBusy) return;
     _initializePromptScheduled=YES;
     dispatch_async(dispatch_get_main_queue(),^{
         self.initializePromptScheduled=NO;
         if(!self.needsInitializePrompt || !self.link.ready || !self.link.supportsControl || self.link.controlBusy ||
-           !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-        [self initialize];
+           qp_initialization_pending(&self->_initialization) || !self.view.window || self.presentedViewController ||
+           UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+        [self offerInitialization];
     });
 }
 - (void)updateState {
@@ -306,43 +505,51 @@ static void Round(UIView *view,CGFloat radius) {
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
 }
-- (void)initialize {
-    if(!_host.length) { [self findConsole]; return; }
-    if(_link.controlBusy||_link.connecting) return; [self clearControls];
+- (void)offerInitialization {
     _needsInitializePrompt=NO;
-    NSString *text=_link.ready?@"Initialize PS5 Pad, then select your profile on the TV if asked.\n\nIf another controller takes over, use ••• → Initialize Controller again. This app cannot yet verify which controller owns your profile. The other controller may disconnect.":@"Connect to your console, or load the controller service if its jailbreak and ELF loader are running. Then use ••• → Initialize Controller.";
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Initialize Controller" message:text preferredStyle:UIAlertControllerStyleAlert];
-    if(_link.ready&&_link.supportsControl) [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a;
-        if(!self.link.ready || !self.link.supportsControl || self.link.controlBusy) { self.result.text=@"Connection changed. Use ••• to reconnect or retry."; return; }
-        self.result.text=@"Initializing…"; [self.link initializeController];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Initialize Controller"
+        message:@"Select your profile on the TV if asked. If another controller takes over, use ••• → Initialize Controller again. The other controller may disconnect."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        (void)a; [self requestInitialization];
     }]];
-    else if(!_link.ready) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.needsInitializePrompt=YES; self.wantsConnection=YES; dispatch_async(dispatch_get_main_queue(),^{[self resume];}); }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Load Controller Service" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){ (void)a; self.needsInitializePrompt=YES; self.wantsConnection=YES; [self.link loadServiceAt:self.host]; }]];
-    }
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Not now" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
+}
+- (void)disconnectController {
+    qp_initialization_cancel(&_initialization); _needsInitializePrompt=NO; _autoInitializeAttempted=YES; _wantsConnection=NO;
+    [self clearControls]; [_link disconnectController];
 }
 - (void)showConnection {
     [self clearControls];
-    NSString *detail=[NSString stringWithFormat:@"%@\n%@",_host?:@"No console added",_link.message?:@""];
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"PS5 connection" message:detail preferredStyle:UIAlertControllerStyleAlert];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a; dispatch_async(dispatch_get_main_queue(),^{[self initialize];});
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:(_link.ready||_link.connecting)?@"Disconnect":@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a; if(self.link.ready||self.link.connecting) { self.wantsConnection=NO; [self.link disconnect:@"Disconnected"]; }
-        else { self.wantsConnection=YES; [self resume]; }
+    NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. The other controller may disconnect.",_host?:@"No console added",_link.message?:@""];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:_link.ready?@"PS5 connection":@"Connect to PS5" message:detail preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertAction *initialize=[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        (void)a; [self requestInitialization];
+    }];
+    initialize.enabled=!qp_initialization_pending(&_initialization)&&!_link.disconnectingController; [sheet addAction:initialize];
+    if(_link.ready) {
+        UIAlertAction *disconnect=[UIAlertAction actionWithTitle:@"Disconnect controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            (void)a; [self disconnectController];
+        }];
+        disconnect.enabled=_link.supportsDisconnectController&&!_link.disconnectingController; [sheet addAction:disconnect];
+    }
+    if(!_link.ready || !_link.supportsDisconnectController) [sheet addAction:[UIAlertAction actionWithTitle:(_link.ready||_link.connecting)?@"Close connection":@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        (void)a;
+        qp_initialization_cancel(&self->_initialization); self.needsInitializePrompt=NO;
+        if(self.link.ready||self.link.connecting) { self.wantsConnection=NO; [self.link disconnect:@"Disconnected"]; }
+        else if(self.host.length) { self.wantsConnection=YES; [self.link connectTo:self.host]; }
+        else [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Find / Add PS5" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a; dispatch_async(dispatch_get_main_queue(),^{[self findConsole];});
+        (void)a; [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
 }
 - (void)findConsole {
     if(self.presentedViewController) return;
+    qp_initialization_cancel(&_initialization); _autoInitializeAttempted=NO;
     [self clearControls]; [_link disconnect:@"Choose a console"]; _wantsConnection=NO;
     QPDiscoveryController *finder=[QPDiscoveryController new]; __weak QPViewController *weakSelf=self;
     finder.added=^(NSString *host){
@@ -361,6 +568,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)resumeAfterInterruption {
     if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    _autoInitializeAttempted=NO;
     /* Root alerts describe the old connection. Rebuild them after reconnecting;
      * keep the discovery navigation controller and its editable address intact. */
     if([self.presentedViewController isKindOfClass:UIAlertController.class]) {
@@ -368,7 +576,7 @@ static void Round(UIView *view,CGFloat radius) {
         [self dismissViewControllerAnimated:NO completion:^{ [self resume]; }];
     } else [self resume];
 }
-- (void)suspend { [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
+- (void)suspend { qp_initialization_cancel(&_initialization); [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
 @end
 
 @interface QPSceneDelegate : UIResponder <UIWindowSceneDelegate>

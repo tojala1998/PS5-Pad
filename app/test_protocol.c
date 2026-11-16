@@ -24,6 +24,17 @@ int main(void) {
     assert(qp_kodi_action(1)==QP_LEFT && qp_kodi_action(3)==QP_RIGHT);
     assert(qp_kodi_action(2)==QP_OPTIONS && qp_kodi_action(5)==0);
     uint8_t control[8]; qp_header(control,QP_INITIALIZE,0); assert(qp_valid_header(control) && control[5]==129);
+    qp_header(control,QP_DISCONNECT_CONTROLLER,0); assert(qp_valid_header(control) && control[5]==132 && qp_u16(control+6)==0);
+    assert(qp_supports_disconnect(0x0203,QP_CAP_CONTROL|QP_CAP_DISCONNECT_CONTROLLER));
+    assert(!qp_supports_disconnect(0x0202,QP_CAP_CONTROL|QP_CAP_DISCONNECT_CONTROLLER));
+    assert(!qp_supports_disconnect(0x0203,QP_CAP_CONTROL));
+    assert(!qp_supports_disconnect(0x0203,QP_CAP_DISCONNECT_CONTROLLER));
+    uint8_t removed[32]={0}; qp_put32(removed+16,(uint32_t)-1);
+    assert(qp_disconnect_response_valid(removed));
+    qp_put32(removed+20,1); assert(!qp_disconnect_response_valid(removed)); qp_put32(removed+20,0);
+    qp_put32(removed+16,42); assert(!qp_disconnect_response_valid(removed));
+    qp_put32(removed,5); assert(!qp_disconnect_response_valid(removed));
+    qp_put32(removed+16,(uint32_t)-1); assert(!qp_disconnect_response_valid(removed));
     frame[4]=2; assert(!qp_valid_header(frame)); frame[4]=1;
     frame[6]=1; frame[7]=1; assert(!qp_valid_header(frame));
     puts("PASS: native frame encoder matches PMCP wire fixtures; invalid headers rejected.");

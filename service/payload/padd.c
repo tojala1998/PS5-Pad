@@ -4,8 +4,9 @@
  * - This variant creates one virtual pad for the foreground user.
  * - One client at a time; each STATE carries the whole pad state and is ACKed by seq.
  * - Safety: no STATE for watchdog_ms, or a disconnect, forces neutral. A client
- *   silent for idle_ms is dropped. The pad is removed on SHUTDOWN, SIGTERM/SIGINT
- *   and normal exit.
+ *   silent for idle_ms is dropped. Those network events never remove the pad.
+ *   Explicit QP_DISCONNECT_CONTROLLER removes our pad but keeps the service alive;
+ *   SHUTDOWN, SIGTERM/SIGINT and normal exit also remove it.
  * - Logs JSON lines to <log_dir>/padd-XXXXXX.
  */
 #include <errno.h>
@@ -27,7 +28,7 @@
 #include "protocol.h"
 #include "system.h"
 
-#define PADD_VERSION 0x0202
+#define PADD_VERSION 0x0203
 #define PAD_DETACH_SETTLE_MS 180u
 #define PAD_NEUTRAL_WARMUP_MS 200u
 
@@ -134,8 +135,8 @@ static void send_error(struct daemon *d, uint32_t code, const char *message) {
     if (d->client_fd >= 0) send_error_fd(d->client_fd, code, message);
 }
 
-static int report(struct daemon *d, struct pad *pad) {
-    if (!pad->ready) return PMCP_ERR_NO_PAD;
+static int report_owned(struct daemon *d, struct pad *pad) {
+    if (pad->handle < 0) return PMCP_ERR_NO_PAD;
     int status = pad_report(pad->handle, &pad->state);
     d->reports_sent++;
     d->last_report_ms = now_ms();
@@ -145,6 +146,11 @@ static int report(struct daemon *d, struct pad *pad) {
     }
     d->last_report_status = status;
     return status;
+}
+
+static int report(struct daemon *d, struct pad *pad) {
+    if (!pad->ready) return PMCP_ERR_NO_PAD;
+    return report_owned(d, pad);
 }
 
 static int apply(struct daemon *d) { return report(d, &d->pad); }
@@ -167,7 +173,8 @@ static void drop_client(struct daemon *d, const char *reason) {
 }
 
 static uint32_t flags(const struct daemon *d) {
-    return (d->pad.ready ? PMCP_FLAG_PAD_READY : 0) | PMCP_FLAG_TOUCH_UNMAPPED | QP_FLAG_CONTROLS;
+    return (d->pad.ready ? PMCP_FLAG_PAD_READY : 0) | PMCP_FLAG_TOUCH_UNMAPPED |
+        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER;
 }
 
 static void controller_status(struct daemon *d, uint8_t type, int status) {
@@ -232,12 +239,38 @@ static int initialize_controller(struct daemon *d) {
     return d->add_status;
 }
 
+/* Session end must be explicit. EOF, heartbeat loss and phone sleep only
+ * neutralize input, because they cannot distinguish sleep from an ended session. */
+static int disconnect_controller(struct daemon *d) {
+    neutral(&d->pad.state);
+    d->last_state_ms = now_ms();
+    d->pad.ready = 0;
+    if (d->pad.handle < 0) return 0;
+    /* A prior failed removal retains ownership but not readiness. Retry neutral
+     * on that same handle before removing it; never look up or remove other pads. */
+    d->neutral_events++;
+    int neutral_status = report_owned(d, &d->pad);
+    int handle = d->pad.handle;
+    int rc = pad_remove(handle);
+    if (!rc) {
+        d->pad.handle = -1;
+        d->last_detach_ms = now_ms();
+    }
+    log_event("controller_disconnected", "\"status\":%d,\"neutral_status\":%d,\"handle\":%d",
+        rc, neutral_status, handle);
+    return rc;
+}
+
 static void handle_message(struct daemon *d, uint8_t type, const uint8_t *payload, uint16_t length) {
     switch (type) {
     case QP_STATUS:
     case QP_INITIALIZE:
         if (length) { send_error(d, PMCP_ERR_BAD_LENGTH, "request must be empty"); return; }
         controller_status(d, type, type == QP_INITIALIZE ? initialize_controller(d) : 0);
+        return;
+    case QP_DISCONNECT_CONTROLLER:
+        if (length) { send_error(d, PMCP_ERR_BAD_LENGTH, "request must be empty"); return; }
+        controller_status(d, type, disconnect_controller(d));
         return;
     case QP_VLC:
     case QP_KODI: {

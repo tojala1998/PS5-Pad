@@ -32,6 +32,7 @@ enum pmcp_type {
     QP_INITIALIZE = 129,/* remove only our pad, inspect foreground controller, recreate our pad */
     QP_VLC = 130,       /* launch only the verified VLC title; i32 status response */
     QP_KODI = 131,      /* launch only the verified Kodi title; i32 status response */
+    QP_DISCONNECT_CONTROLLER = 132, /* empty request; neutral/remove only our pad; qp_status response */
 };
 
 #define PMCP_TOUCH_POINTS 2
@@ -128,6 +129,7 @@ struct pmcp_command {           /* 4 + 4 + 32 bytes */
 
 #define PMCP_FLAG_PAD_READY       0x1
 #define QP_FLAG_CONTROLS          0x10000
+#define QP_FLAG_DISCONNECT_CONTROLLER 0x20000 /* explicit session end supported (padd 2.3+) */
 #define PMCP_FLAG_TOUCH_UNMAPPED  0x2   /* touch coordinates are accepted but not delivered */
 #define PMCP_FLAG_USER_NAME       0x4   /* GET_USER supported (padd 1.2+) */
 #define PMCP_FLAG_UNINSTALL       0x8   /* COMMAND op UNINSTALL supported (padd 1.3+) */
@@ -157,6 +159,7 @@ enum pmcp_error {
 };
 
 _Static_assert(sizeof(struct pmcp_state) == 28, "state is 28 bytes");
+_Static_assert(sizeof(struct qp_status) == 32, "controller status is 32 bytes");
 _Static_assert(sizeof(struct pmcp_hello) == 20, "hello is 20 bytes");
 _Static_assert(sizeof(struct pmcp_user) == 72, "user is 72 bytes");
 _Static_assert(sizeof(struct pmcp_users) == 248, "users is 248 bytes");

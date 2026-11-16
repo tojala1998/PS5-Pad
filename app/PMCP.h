@@ -4,7 +4,8 @@
 #include <string.h>
 
 enum { QP_HELLO=1, QP_STATE=2, QP_PING=3, QP_ACK=4, QP_ERROR=5,
-       QP_STATUS=128, QP_INITIALIZE=129, QP_VLC=130, QP_KODI=131 };
+       QP_STATUS=128, QP_INITIALIZE=129, QP_VLC=130, QP_KODI=131, QP_DISCONNECT_CONTROLLER=132 };
+enum { QP_CAP_CONTROL=0x10000, QP_CAP_DISCONNECT_CONTROLLER=0x20000 };
 enum { QP_L3=2, QP_R3=4, QP_OPTIONS=8, QP_UP=0x10, QP_RIGHT=0x20,
        QP_DOWN=0x40, QP_LEFT=0x80, QP_L2=0x100, QP_R2=0x200,
        QP_L1=0x400, QP_R1=0x800, QP_TRIANGLE=0x1000, QP_CIRCLE=0x2000,
@@ -12,6 +13,12 @@ enum { QP_L3=2, QP_R3=4, QP_OPTIONS=8, QP_UP=0x10, QP_RIGHT=0x20,
 typedef struct { uint32_t buttons; uint8_t lx,ly,rx,ry,l2,r2; } QPState;
 static inline uint16_t qp_u16(const uint8_t *p) { return p[0] | ((uint16_t)p[1]<<8); }
 static inline uint32_t qp_u32(const uint8_t *p) { return qp_u16(p) | ((uint32_t)qp_u16(p+2)<<16); }
+static inline int qp_supports_disconnect(uint16_t payloadVersion,uint32_t flags) {
+    return payloadVersion>=0x0203 && (flags&QP_CAP_CONTROL) && (flags&QP_CAP_DISCONNECT_CONTROLLER);
+}
+static inline int qp_disconnect_response_valid(const uint8_t *status) {
+    return qp_u32(status)==0 && !(qp_u32(status+20)&1) && (int32_t)qp_u32(status+16)<0;
+}
 static inline void qp_put32(uint8_t *p,uint32_t n) { for(int i=0;i<4;i++) p[i]=(uint8_t)(n>>(i*8)); }
 static inline QPState qp_neutral(void) { return (QPState){0,128,128,128,128,0,0}; }
 static inline QPState qp_buttons(uint32_t buttons) {
