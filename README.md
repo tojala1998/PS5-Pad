@@ -2,7 +2,7 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.4 IPA](releases/0.4.4/PS5-Pad-0.4.4-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.4-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.3.elf)
+[Download the unsigned 0.4.5 IPA](releases/0.4.5/PS5-Pad-0.4.5-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.5-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.3.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
@@ -18,9 +18,11 @@ Version 0.4.2 fixes resuming with a connection prompt still open: stale prompts 
 
 Version 0.4.3 clears stale success text during initialization, shows progress, handles initialization failures and labels the service connection separately from virtual-controller readiness. Service 2.2 adds an unconditional detach interval and verifies neutral reports before returning initialization success. Profile assignment remains a TV step; the owner still reported two attempts in 0.4.3. Its logs showed one initialization plus a duplicate service-load attempt, identifying a separate connection-flow problem. See the [build notes](docs/PS5-Pad-0.4.3-notes.txt).
 
-Version 0.4.4 adds one-action initialization with a compact Service → Controller → Done progress strip. It checks the existing service, loads it at most once if needed, and initializes once. It automatically initializes after a successful status check reports no PS5 Pad virtual controller; this is not detection of physical-controller ownership. Pending work cancels on background, disconnect, console change or failure. Service 2.3 adds an explicit **Disconnect controller** command. The revised end-to-end flow needs live validation.
+Version 0.4.4 adds one-action initialization with a compact Service → Controller → Done progress strip. It checks the existing service, loads it at most once if needed, and initializes once. It automatically initializes after a successful status check reports no PS5 Pad virtual controller; this is not detection of physical-controller ownership. Pending work cancels on background, disconnect, console change or failure. Service 2.3 adds an explicit **Disconnect controller** command. Its standalone installation was verified over USB; the owner confirmed initialization and face-button feedback working in Kodi. The subsequent lock/resume report is addressed in 0.4.5.
 
 Button feedback follows a matching, successful controller-report acknowledgment. Each face button (including the swipe pad's Cross) flashes only for its own registered press; repeated neutral/held reports do not retrigger feedback. The hit area stays fixed, and drag tracking uses the same bounds as the painted control. Short confirmed presses remain visible even when their release follows immediately. Confirmation means the service accepted the HID report, not proof that the TV profile or Kodi acted on it.
+
+Version 0.4.5 automatically reconnects to the saved console on launch and unlock, reusing its existing virtual controller. Bounded foreground retries accommodate network wakeup; if the service is unavailable, it may load the bundled service once. Busy, unrecognized and permission-blocked services do not trigger loading. Only a fresh successful status reporting no pad allows automatic initialization. Returning to a healthy controller does not re-arm Initialize. The helper remains 2.3; no controller replacement is needed to deploy this app update. The corrected unlock flow awaits live confirmation.
 
 A fresh installation opens Find your PS5 and checks Local Network access before enabling Scan Wi-Fi. Allow the iOS prompt, then scan, select a detected console and tap Add PS5. Access is confirmed by discovering a unique temporary Bonjour service; a timeout or failed connection never counts as permission granted. No console scan starts during the permission check.
 
@@ -77,7 +79,7 @@ The script uses a fresh `work/` directory, runs input/wire tests, compiles with 
 The USB transfer needs an already trusted iPhone, LiveContainer, and a Python environment with `pymobiledevice3` installed. It copies the IPA into LiveContainer's Documents folder and reads it back to verify the bytes. It does not sign, install, launch apps, change phone settings or modify the Home Screen.
 
 ```powershell
-.\Transfer-IPA.ps1 -Ipa .\releases\0.4.4\PS5-Pad-0.4.4-unsigned.ipa
+.\Transfer-IPA.ps1 -Ipa .\releases\0.4.5\PS5-Pad-0.4.5-unsigned.ipa
 # Or build and transfer:
 .\Build.ps1 -IosSdk 'C:\path\to\iPhoneOS16.5.sdk' -Transfer
 ```

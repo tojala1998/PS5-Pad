@@ -51,5 +51,46 @@ int main(void) {
     assert(!qp_should_auto_initialize(false,true,true,true,false,true,0));
     assert(!qp_should_auto_initialize(false,true,true,false,true,true,0));
     assert(!qp_should_auto_initialize(false,true,true,false,false,true,-1));
-    puts("PASS: initialization queues once, loads at most once, cancels, and gates automatic initialization.");
+    /* Sleep cancels transient requests but preserves the service-owned pad.
+     * Wait for fresh STATUS; a ready existing pad needs neither a prompt nor INIT. */
+    qp_initialization_cancel(&s);
+    assert(!qp_resume_reuses_controller(false,false,false,false));
+    assert(!qp_resume_reuses_controller(true,false,true,true));
+    assert(!qp_should_auto_initialize(false,true,false,true,true,true,0));
+    assert(qp_resume_reuses_controller(true,true,true,false));
+    assert(!qp_should_auto_initialize(false,true,true,true,false,true,0));
+    assert(qp_initialization_step(&s,true,false,false,true,false)==QP_INIT_WAIT);
+    /* An explicit Initialize still replaces that controller when requested. */
+    assert(qp_initialization_request(&s,true));
+    assert(qp_initialization_step(&s,true,false,false,true,false)==QP_INIT_SEND);
+    qp_initialization_cancel(&s);
+    /* A fresh status proving absence retains the single automatic attempt. */
+    assert(!qp_resume_reuses_controller(true,true,false,false));
+    assert(qp_should_auto_initialize(false,true,true,false,false,true,0));
+    assert(qp_initialization_request(&s,false));
+    assert(qp_initialization_step(&s,true,false,false,true,false)==QP_INIT_SEND);
+    assert(!qp_should_auto_initialize(true,true,true,false,false,true,0));
+    assert(qp_initialization_step(&s,true,false,false,true,false)==QP_INIT_WAIT);
+    /* Saved-console bring-up has three bounded connects, then at most one
+     * qualified load. None of these actions creates or replaces a controller. */
+    QPEnsureSession ensure={0}; unsigned delay=99;
+    qp_ensure_begin(&ensure);
+    assert(qp_ensure_next(&ensure,false,&delay)==QP_ENSURE_CONNECT && delay==0);
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_CONNECT && delay==1);
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_CONNECT && delay==2);
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_LOAD && ensure.loaded);
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_STOP && !ensure.active);
+    qp_ensure_begin(&ensure);
+    for(unsigned i=0;i<3;i++) assert(qp_ensure_next(&ensure,false,&delay)==QP_ENSURE_CONNECT);
+    assert(qp_ensure_next(&ensure,false,&delay)==QP_ENSURE_STOP && !ensure.loaded); /* permission/protocol/busy */
+    qp_ensure_begin(&ensure); assert(qp_ensure_next(&ensure,false,&delay)==QP_ENSURE_CONNECT);
+    qp_ensure_cancel(&ensure); /* HELLO, background, explicit disconnect, host change, or manual takeover */
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_STOP && !ensure.loaded);
+    qp_ensure_begin(&ensure);
+    assert(qp_ensure_next(&ensure,false,&delay)==QP_ENSURE_CONNECT);
+    assert(qp_ensure_next(&ensure,false,&delay)==QP_ENSURE_CONNECT && ensure.loadBlocked); /* Other result */
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_CONNECT);
+    assert(qp_ensure_next(&ensure,true,&delay)==QP_ENSURE_STOP && !ensure.loaded); /* later refusal cannot erase denial/busy/protocol */
+    qp_ensure_begin(&ensure); assert(ensure.attempts==0 && !ensure.loaded && ensure.active);
+    puts("PASS: initialization queues once, loads at most once, cancels, resumes an existing controller, and bounds automatic session bring-up.");
 }

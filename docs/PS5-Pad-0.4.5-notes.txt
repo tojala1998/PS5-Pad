@@ -1,0 +1,38 @@
+PS5 Pad 0.4.5 (build 11), controller service 2.3
+
+Fixes the screen-lock resume flow. The PS5 service retains its virtual controller
+while the phone sleeps, but 0.4.4 re-armed the Initialize prompt on background,
+on returning from an alert, and on launch with a saved console. Accepting it
+recreated the existing controller and produced disconnect/connect notifications.
+
+Reopening now reconnects to the existing service without automatically offering
+to replace a healthy controller. A fresh successful status with a ready pad
+resolves the initialization prompt. A confirmed absent pad can still initialize
+automatically once; manual Initialize remains available through the three-dot
+menu when another controller has taken over.
+
+With a saved console, this connection sequence starts immediately on launch and
+unlock. Foreground reconnection has a bounded retry sequence for network wakeup.
+If the saved console's controller service is unavailable after those attempts,
+the app can start the bundled service once, reconnect and check it. A busy,
+unrecognized or permission-blocked service never triggers loading. Once the
+service answers, a fresh successful status reuses its existing controller or
+initializes only if none exists. No cached handle is trusted across launches.
+Backgrounding, manual Initialize/Disconnect and changing the console cancel
+pending automatic work.
+
+This update does not replace the console helper. It retains 0.4.4's fixed input
+regions, acknowledgment-driven feedback and explicit Disconnect controller.
+The owner confirmed 0.4.4 initialization and face-button feedback working in
+Kodi, and its standalone installation was independently verified over USB.
+
+The lock report was checked without input: the phone recorded background pause,
+while the service retained the same controller handle and initialization count
+with no report failures. The owner reported no TV disconnect on lock; the paired
+disconnect/connect notifications occurred during reconnection/initialization.
+The corrected unlock path needs a new live test after this update is installed.
+
+Bundle identity is com.uhnmeyker.ps5pad. No settings are seeded, migrated or reset.
+Phone network suspension is separate from PS5 controller lifetime. Automatic
+force-quit detection while suspended is still not guaranteed by iOS. Contextual
+keyboard visibility remains research and is not included in this build.

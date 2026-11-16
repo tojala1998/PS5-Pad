@@ -231,6 +231,7 @@ static void Round(UIView *view,CGFloat radius) {
 
 @interface QPViewController : UIViewController {
     QPInitialization _initialization;
+    QPEnsureSession _ensureSession;
 }
 @property(nonatomic,strong) QPConnection *link;
 @property(nonatomic,strong) UIView *canvas;
@@ -246,7 +247,8 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic) BOOL didOfferSetup;
 @property(nonatomic) BOOL needsInitializePrompt,initializePromptScheduled;
 @property(nonatomic) BOOL showingLinkProgress;
-@property(nonatomic) BOOL initializationWorkScheduled,autoInitializeAttempted;
+@property(nonatomic) BOOL initializationWorkScheduled,autoInitializeAttempted,ensureSessionScheduled,reusedController;
+@property(nonatomic) NSUInteger ensureSessionGeneration;
 @property(nonatomic) NSUInteger initializationRequests,initializationSends,initializationLoads;
 @property(nonatomic,copy) NSString *initializationFailure;
 @property(nonatomic,strong) UIStackView *initializationProgress;
@@ -279,7 +281,7 @@ static void Round(UIView *view,CGFloat radius) {
     self.view.backgroundColor=Color(0x171717); _canvas=[UIView new]; [self.view addSubview:_canvas];
     _buttons=[NSMutableArray array]; _mediaButtons=[NSMutableArray array]; _link=[QPConnection new];
     _host=[NSUserDefaults.standardUserDefaults stringForKey:@"consoleHost"];
-    _needsInitializePrompt=_host.length>0;
+    _needsInitializePrompt=NO; /* Saved consoles resume their existing controller. */
     _wantsConnection=![NSProcessInfo.processInfo.arguments containsObject:@"--offline"];
     __weak QPViewController *weakSelf=self;
     _link.changed=^{[weakSelf refresh];};
@@ -385,6 +387,7 @@ static void Round(UIView *view,CGFloat radius) {
     else [self resume];
 }
 - (void)refresh {
+    if(_ensureSession.active && _link.ready) [self cancelEnsureSession];
     if(_initialization.phase==QP_INIT_DONE && (!_link.ready || !_link.padReady)) { qp_initialization_cancel(&_initialization); _showingLinkProgress=YES; }
     BOOL pending=qp_initialization_pending(&_initialization);
     NSString *progress=nil;
@@ -392,9 +395,10 @@ static void Round(UIView *view,CGFloat radius) {
     else if(_initialization.phase==QP_INIT_SENT) progress=@"Initializing controller…";
     else if(_initialization.phase==QP_INIT_DONE) progress=@"Ready. Select your profile on the TV if asked.";
     else if(_initialization.phase==QP_INIT_FAILED) progress=_initializationFailure?:_link.message;
-    _statusLabel.text=_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.padReady?@"Virtual controller ready":@"Service connected · use •••"):
-        (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5")))));
-    if(progress) _result.text=progress;
+    _statusLabel.text=_ensureSession.active?(_ensureSession.loaded?@"Starting service…":@"Reconnecting…"):(_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.padReady?@"Virtual controller ready":@"Service connected · use •••"):
+        (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5"))))));
+    if(_ensureSession.active) _result.text=_ensureSession.loaded?@"Starting the saved PS5 session…":@"Reconnecting to your existing controller…";
+    else if(progress) _result.text=progress;
     else if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
     else if(_showingLinkProgress) { _showingLinkProgress=NO; _result.text=_link.message; }
     _initializationProgress.hidden=_initialization.phase==QP_INIT_IDLE; _initializeHint.hidden=!_initializationProgress.hidden;
@@ -406,20 +410,64 @@ static void Round(UIView *view,CGFloat radius) {
         _initializationSteps[i].text=[NSString stringWithFormat:@"%@ %@",mark,names[i]];
         _initializationSteps[i].textColor=(i==stage&&_initialization.phase==QP_INIT_FAILED)?Color(0xF08D8D):(i<=stage?Accent():Color(0x777777));
     }
-    if(pending || _link.disconnectingController) [_initializationSpinner startAnimating]; else [_initializationSpinner stopAnimating];
-    _consoleButton.accessibilityValue=_statusLabel.text; _consoleButton.enabled=!_link.disconnectingController;
+    if(pending || _link.disconnectingController || _ensureSession.active) [_initializationSpinner startAnimating]; else [_initializationSpinner stopAnimating];
+    _consoleButton.accessibilityValue=_statusLabel.text; _consoleButton.enabled=!_link.disconnectingController&&!_ensureSession.active;
     BOOL active=_wantsConnection&&_link.ready&&_link.padReady&&!_link.controlBusy&&!_link.disconnectingController&&!pending; _swipe.active=active;
     for(QPButton *button in _buttons) { button.enabled=active; button.alpha=active?1:.35; if(!active) [button clear]; }
     if(!active) { _pulseMask=0; _pulseGeneration++; }
     for(UIButton *button in _mediaButtons) { button.enabled=active; button.alpha=active?1:.3; }
     UIApplication.sharedApplication.idleTimerDisabled=NO;
+    [self offerInitializationIfReady];
     NSDictionary *record=@{@"phase":@(_initialization.phase),@"requests":@(_initializationRequests),@"init_sent":@(_initializationSends),
         @"service_loads":@(_initializationLoads),@"loaded_this_request":@(_initialization.loaded),@"allows_load":@(_initialization.allowLoad),
-        @"auto_attempted":@(_autoInitializeAttempted),@"failure":_initializationFailure?:@"",@"updated_unix":@(NSDate.date.timeIntervalSince1970)};
+        @"auto_attempted":@(_autoInitializeAttempted),@"automatic_session_active":@(_ensureSession.active),
+        @"automatic_connect_attempts":@(_ensureSession.attempts),@"automatic_service_loaded":@(_ensureSession.loaded),@"automatic_load_blocked":@(_ensureSession.loadBlocked),@"reused_controller":@(_reusedController),@"failure":_initializationFailure?:@"",@"updated_unix":@(NSDate.date.timeIntervalSince1970)};
     NSString *file=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"PS5Pad-initialization.json"];
     [[NSJSONSerialization dataWithJSONObject:record options:NSJSONWritingPrettyPrinted error:nil] writeToFile:file atomically:YES];
     [self scheduleInitialization];
-    [self offerInitializationIfReady];
+    [self scheduleEnsureSession];
+}
+- (void)cancelEnsureSession {
+    qp_ensure_cancel(&_ensureSession); _ensureSessionGeneration++; _ensureSessionScheduled=NO;
+}
+- (void)startEnsureSession {
+    [self cancelEnsureSession];
+    if(!_host.length || !_wantsConnection || qp_initialization_pending(&_initialization) || _link.disconnectingController ||
+       UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    _reusedController=NO; _autoInitializeAttempted=NO;
+    if(_link.ready) { [self offerInitializationIfReady]; return; }
+    qp_ensure_begin(&_ensureSession); [self refresh];
+}
+- (void)scheduleEnsureSession {
+    if(!_ensureSession.active || _ensureSessionScheduled) return;
+    _ensureSessionScheduled=YES; NSUInteger generation=_ensureSessionGeneration;
+    dispatch_async(dispatch_get_main_queue(),^{
+        if(generation!=self.ensureSessionGeneration) return;
+        self.ensureSessionScheduled=NO;
+        if(!self.wantsConnection || !self.host.length || qp_initialization_pending(&self->_initialization) || self.link.disconnectingController ||
+           UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { [self cancelEnsureSession]; return; }
+        if(self.link.ready) { [self cancelEnsureSession]; [self refresh]; return; }
+        if(self.link.connecting) {
+            /* Adopt a connection already started during initial scene setup. */
+            if(!self->_ensureSession.attempts) { self->_ensureSession.attempts=1; [self.link limitConnectWait:3]; }
+            return;
+        }
+        unsigned delay=0;
+        QPEnsureAction action=qp_ensure_next(&self->_ensureSession,self.link.failureKind==QPConnectionFailureUnavailable,&delay);
+        if(action==QP_ENSURE_STOP) { [self cancelEnsureSession]; [self refresh]; return; }
+        if(action==QP_ENSURE_LOAD) { [self.link loadServiceAt:self.host]; return; }
+        if(!delay) { [self.link connectTo:self.host timeout:3]; return; }
+        self.ensureSessionScheduled=YES;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)delay*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+            if(generation!=self.ensureSessionGeneration) return;
+            self.ensureSessionScheduled=NO;
+            if(!self->_ensureSession.active || !self.wantsConnection || qp_initialization_pending(&self->_initialization) || self.link.disconnectingController ||
+               UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { [self cancelEnsureSession]; return; }
+            if(self.link.ready) { [self cancelEnsureSession]; [self refresh]; return; }
+            if(self.link.connecting) { [self scheduleEnsureSession]; return; }
+            [self.link connectTo:self.host timeout:3];
+        });
+    });
 }
 - (void)scheduleInitialization {
     if(!qp_initialization_pending(&_initialization) || _initializationWorkScheduled) return;
@@ -449,6 +497,10 @@ static void Round(UIView *view,CGFloat radius) {
         return;
     }
     if(!qp_initialization_request(&_initialization,allowLoad)) return;
+    BOOL cancelLoader=_ensureSession.active&&_ensureSession.loaded&&!_link.ready;
+    [self cancelEnsureSession];
+    if(cancelLoader) [_link disconnect:@"Preparing controller…"];
+    _reusedController=NO;
     _initializationRequests++; [_link limitConnectWait:3];
     _autoInitializeAttempted=YES; _needsInitializePrompt=NO; _initializationFailure=nil; _wantsConnection=YES;
     [self clearControls]; [self refresh];
@@ -457,6 +509,11 @@ static void Round(UIView *view,CGFloat radius) {
 - (void)offerInitializationIfReady {
     if(!_wantsConnection || _link.disconnectingController || !self.view.window || self.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive ||
        qp_initialization_pending(&_initialization)) return;
+    if(qp_resume_reuses_controller(_link.ready,_link.controllerChecked,_link.padReady,_link.controlBusy)) {
+        _needsInitializePrompt=NO;
+        if(_initialization.phase==QP_INIT_IDLE && !_autoInitializeAttempted) _reusedController=YES;
+        return;
+    }
     if(qp_should_auto_initialize(_autoInitializeAttempted,_link.ready,_link.controllerChecked,_link.padReady,_link.controlBusy,_link.supportsControl,(int)_link.userStatus)) {
         [self beginInitializationAllowLoad:NO]; return;
     }
@@ -517,6 +574,7 @@ static void Round(UIView *view,CGFloat radius) {
     [self presentViewController:sheet animated:YES completion:nil];
 }
 - (void)disconnectController {
+    [self cancelEnsureSession];
     qp_initialization_cancel(&_initialization); _needsInitializePrompt=NO; _autoInitializeAttempted=YES; _wantsConnection=NO;
     [self clearControls]; [_link disconnectController];
 }
@@ -536,9 +594,9 @@ static void Round(UIView *view,CGFloat radius) {
     }
     if(!_link.ready || !_link.supportsDisconnectController) [sheet addAction:[UIAlertAction actionWithTitle:(_link.ready||_link.connecting)?@"Close connection":@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a;
-        qp_initialization_cancel(&self->_initialization); self.needsInitializePrompt=NO;
+        [self cancelEnsureSession]; qp_initialization_cancel(&self->_initialization); self.needsInitializePrompt=NO;
         if(self.link.ready||self.link.connecting) { self.wantsConnection=NO; [self.link disconnect:@"Disconnected"]; }
-        else if(self.host.length) { self.wantsConnection=YES; [self.link connectTo:self.host]; }
+        else if(self.host.length) { self.wantsConnection=YES; [self startEnsureSession]; }
         else [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Find / Add PS5" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
@@ -549,13 +607,13 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)findConsole {
     if(self.presentedViewController) return;
-    qp_initialization_cancel(&_initialization); _autoInitializeAttempted=NO;
+    [self cancelEnsureSession]; qp_initialization_cancel(&_initialization); _autoInitializeAttempted=NO;
     [self clearControls]; [_link disconnect:@"Choose a console"]; _wantsConnection=NO;
     QPDiscoveryController *finder=[QPDiscoveryController new]; __weak QPViewController *weakSelf=self;
     finder.added=^(NSString *host){
         QPViewController *self=weakSelf; if(!self) return;
         self.host=host; [NSUserDefaults.standardUserDefaults setObject:host forKey:@"consoleHost"];
-        self.needsInitializePrompt=YES; self.wantsConnection=YES; self.result.text=@"Console added. Connecting to initialize…"; [self resume];
+        self.needsInitializePrompt=YES; self.wantsConnection=YES; self.result.text=@"Console added. Connecting…"; [self startEnsureSession];
     };
     UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:finder];
     navigation.modalPresentationStyle=UIModalPresentationFullScreen;
@@ -563,20 +621,22 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)resume {
     if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-    if(_host.length&&_wantsConnection&&!_link.ready&&!_link.connecting&&self.isViewLoaded&&!self.presentedViewController) [_link connectTo:_host];
+    if(_host.length&&_wantsConnection&&self.isViewLoaded&&!self.presentedViewController&&!qp_initialization_pending(&_initialization)) {
+        if(_ensureSession.active) [self scheduleEnsureSession];
+        else if(!_link.ready&&!_link.connecting&&!_ensureSessionGeneration) [self startEnsureSession];
+    }
     [self offerInitializationIfReady];
 }
 - (void)resumeAfterInterruption {
     if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
     _autoInitializeAttempted=NO;
-    /* Root alerts describe the old connection. Rebuild them after reconnecting;
-     * keep the discovery navigation controller and its editable address intact. */
+    /* Dismiss stale connection alerts, then reconnect to the existing pad.
+     * Keep the discovery navigation controller and its editable address intact. */
     if([self.presentedViewController isKindOfClass:UIAlertController.class]) {
-        _needsInitializePrompt=YES;
-        [self dismissViewControllerAnimated:NO completion:^{ [self resume]; }];
-    } else [self resume];
+        [self dismissViewControllerAnimated:NO completion:^{ [self startEnsureSession]; }];
+    } else [self startEnsureSession];
 }
-- (void)suspend { qp_initialization_cancel(&_initialization); [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
+- (void)suspend { [self cancelEnsureSession]; qp_initialization_cancel(&_initialization); [self clearControls]; [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO; }
 @end
 
 @interface QPSceneDelegate : UIResponder <UIWindowSceneDelegate>
@@ -592,7 +652,6 @@ static void Round(UIView *view,CGFloat radius) {
     _controller=[QPViewController new]; _window.rootViewController=_controller; [_window makeKeyAndVisible];
 }
 - (void)sceneWillResignActive:(UIScene *)scene { (void)scene; [_controller suspend]; }
-- (void)sceneDidEnterBackground:(UIScene *)scene { (void)scene; _controller.needsInitializePrompt=YES; }
 - (void)sceneDidBecomeActive:(UIScene *)scene { (void)scene; [_controller resumeAfterInterruption]; }
 - (void)sceneDidDisconnect:(UIScene *)scene { (void)scene; [_controller suspend]; }
 @end

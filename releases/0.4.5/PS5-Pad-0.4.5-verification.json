@@ -1,0 +1,12 @@
+{
+  "app": "PS5 Pad",
+  "version": "0.4.5",
+  "build": "11",
+  "bundle_id": "com.uhnmeyker.ps5pad",
+  "unsigned": true,
+  "architecture": "ARM64",
+  "sha256": "7b21e171e50beaaa2a178841718f0a7ae106b67934105b62c84cabfc3157feb9",
+  "bytes": 126113,
+  "service_sha256": "1c7c611b5cb7afeb28e9a6955cc683bfc480349aa96ef7d0f3b6ee622f6e435e",
+  "validation": "Local archive and protocol checks only; no device installation or live input test."
+}

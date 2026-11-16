@@ -27,7 +27,28 @@ static inline QPInitAction qp_initialization_step(QPInitialization *s,bool ready
     if(unavailable && s->allowLoad && !s->loaded) { s->loaded=true; return QP_INIT_LOAD; }
     s->phase=QP_INIT_FAILED; return QP_INIT_FAIL;
 }
+/* A successful fresh status snapshot reuses the existing virtual controller.
+ * Returning from phone sleep never by itself requests initialization. */
+static inline bool qp_resume_reuses_controller(bool ready,bool checked,bool padReady,bool busy) {
+    return ready && checked && padReady && !busy;
+}
 static inline bool qp_should_auto_initialize(bool attempted,bool ready,bool checked,bool padReady,bool busy,bool supportsControl,int userStatus) {
     return !attempted && ready && checked && !padReady && !busy && supportsControl && userStatus==0;
+}
+
+/* Automatic saved-console bring-up only connects/loads. It never creates a
+ * controller itself; fresh STATUS decides reuse versus one absent-pad INIT. */
+typedef struct { unsigned attempts; bool active,loaded,loadBlocked; } QPEnsureSession;
+typedef enum { QP_ENSURE_STOP, QP_ENSURE_CONNECT, QP_ENSURE_LOAD } QPEnsureAction;
+static inline void qp_ensure_begin(QPEnsureSession *s) { *s=(QPEnsureSession){.active=true}; }
+static inline void qp_ensure_cancel(QPEnsureSession *s) { s->active=false; }
+static inline QPEnsureAction qp_ensure_next(QPEnsureSession *s,bool unavailable,unsigned *delay) {
+    *delay=0;
+    if(!s->active) return QP_ENSURE_STOP;
+    if(s->loaded) { s->active=false; return QP_ENSURE_STOP; }
+    if(s->attempts && !unavailable) s->loadBlocked=true;
+    if(s->attempts<3) { *delay=s->attempts++; return QP_ENSURE_CONNECT; }
+    if(unavailable && !s->loadBlocked) { s->loaded=true; return QP_ENSURE_LOAD; }
+    s->active=false; return QP_ENSURE_STOP;
 }
 #endif
