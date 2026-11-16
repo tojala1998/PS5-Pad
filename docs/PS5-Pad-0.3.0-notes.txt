@@ -1,0 +1,87 @@
+PS5 Pad 0.3.0 (build 5)
+
+Unsigned iPhone app, focused on Kodi. No app was installed and neither the
+iPhone nor the PS5 was contacted during this build.
+
+What's included
+- Xbox-style, uncluttered remote layout with a large central swipe pad.
+- Triangle and Square along the left edge; Circle along the right edge.
+- Tap the central swipe pad for Cross/Select.
+- PS button, touchpad click, Options, L1 and R1 across the top.
+- Kodi controls across the bottom: previous chapter, rewind, Play/Pause,
+  fast-forward, next chapter. No volume or keyboard remote.
+- Bright white icon with a dark controller mark and blue accents.
+- Kodi launch shortcut; VLC work is deferred.
+- Tap the connection status to initialize the controller. The ellipsis opens
+  this app's connection controls and saved console address.
+
+Kodi playback mappings
+Previous chapter: D-pad Down
+Next chapter: D-pad Up
+Rewind: L2 (digital button plus full analog trigger)
+Fast-forward: R2 (digital button plus full analog trigger)
+Play/Pause: Options, which the PS5 Kodi port maps to its media-play/pause key
+
+Use the bottom controls during Kodi video playback. With no chapters, Kodi's
+Up/Down actions can fall back to large seeks. Other Kodi screens can interpret
+these buttons differently, and custom Kodi keymaps can change their behavior.
+These are Kodi-specific controller actions, not a verified Sony media-remote
+injection hook. No Cross-to-Play/Pause alias is used in this Kodi build.
+
+Input fix
+The old app kept only the latest requested controller state. A short press
+followed by release could be overwritten while an earlier report awaited its
+acknowledgement. The new bounded queue preserves both transitions. A press
+lasts at least 90 ms and a release gap at least 35 ms before the next queued
+state is sent. Duplicate state samples are coalesced. Stale or overflowing
+input disconnects and releases controls instead of replaying delayed actions.
+Initialization and app-launch requests wait for pending input to be released.
+
+Validation and limits
+- Compiled for native ARM64 with warnings treated as errors.
+- Regression tests cover short taps behind a delayed ACK, repeat gaps, chords,
+  queue overload, stale events and reset. Wire fixtures cover PS, L1/R1,
+  Kodi chapter directions, Play/Pause and analog trigger bytes.
+- IPA validation checks ZIP integrity, executable permissions, app identifier,
+  scene lifecycle, local-network description, icon dimensions, absence of
+  signatures/provisioning profiles, and the bundled controller ELF's hash.
+- This new build has NOT been installed or tested on the actual iPhone/PS5.
+  The face-button issue remains open until the user tests this version.
+- The layout preview is a local illustration, not a device screenshot.
+- Uses the existing padd-controller 2.1 service on TCP 9305, unchanged.
+  No payload replacement is necessary if version 2.1 is already running.
+- PS input is encoded using the documented virtual-pad bit, but its behavior
+  on the actual console has not been retested in this build.
+- The physical-controller query still returns unknown on this console.
+- Kodi launching was not exercised because Kodi must stay open.
+- Companion-app groundwork consists of a saved console address, live service
+  status and explicit controller initialization. PSN account sync, pairing
+  tokens, automatic discovery and foreground-app detection are not implemented.
+
+Updating and building
+The app display name is now PS5 Pad. The bundle identifier remains
+local.tyler.quietpad so signing with the existing account can update the
+existing app rather than create a separate app identity. The IPA is unsigned;
+the user's signing/installation workflow remains separate.
+
+From Windows PowerShell, in this workspace:
+  & '.\outputs\Build-PS5Pad.ps1'
+
+The wrapper uses the installed Ubuntu-24.04 WSL distribution, LLVM 18, Python 3,
+and the existing iPhoneOS SDK under work/ios-sdks/iPhoneOS16.5.sdk. Each build
+uses a fresh work directory. It neither signs the IPA nor contacts a device.
+The output is PS5-Pad-0.3.0-unsigned.ipa plus a verification JSON report.
+Keep source under outputs/QuietPad-source; the internal path and executable
+name are intentionally retained for compatibility. The source archive includes
+the tested ELF, build wrapper and icon assets, but not the large SDK directory.
+Set IOS_SDK inside WSL if using another SDK location.
+
+Recreate icon assets if needed:
+  & '.\outputs\QuietPad-source\make-icon.ps1'
+
+Sources for the input mappings (reviewed November 16, 2026)
+https://github.com/VivaLaVent/PS5MC/blob/ps5mc-piers/xbmc/platform/ps5/input/PS5PadInput.cpp
+https://github.com/VivaLaVent/PS5MC/blob/ps5mc-piers/system/keymaps/keyboard.xml
+https://github.com/leolobato/ps5-mcp/blob/main/docs/vpad-abi.md
+Local controller backend sources and their license are included separately in
+padd-controller-2.1-source.zip.

@@ -1,0 +1,12 @@
+{
+  "app": "PS5 Pad",
+  "version": "0.3.0",
+  "build": "5",
+  "bundle_id": "local.tyler.quietpad",
+  "unsigned": true,
+  "architecture": "ARM64",
+  "sha256": "ada1514b1aed9e442fccdced5e8863e89160e680b9488451d9fdcf5427a3fdac",
+  "bytes": 91256,
+  "service_sha256": "f335742e0dc510f951841592ee00343a63959ced8741c28d3a6edd7754e56b7f",
+  "validation": "Local archive and protocol checks only; no device installation or live input test."
+}

@@ -1,0 +1,19 @@
+PS5 Pad 0.4.0 (build 6)
+
+Fresh identity: com.uhnmeyker.ps5pad. Executable: PS5Pad. Display name: PS5 Pad.
+No saved console, settings files, provisioning profiles or credentials are shipped.
+First run offers Scan Wi-Fi, console selection and Add PS5. It saves the address only after Add PS5.
+Discovery checks the PS5 Pad controller service, not PSN pairing or Remote Play. Start the ELF first.
+Discovery reads its greeting without sending input, initialization or app-launch commands.
+It scans the attached Wi-Fi IPv4 subnet, capped at the current /24 on larger networks. Manual entry is available.
+Local Network access must be allowed in the iOS prompt. If the first scan finishes during the prompt, scan again.
+
+Fixed the Objective-C UIControl override names that prevented face, PS, L1/R1, touchpad-click and Options buttons from receiving touches.
+Added a build check against UIKit's actual Objective-C method names.
+Kodi previous/next chapter remain D-pad Down/Up. Rewind/forward now use Left/Right step seeking, not playback-speed changes.
+Play/Pause remains Options. Removed the bottom Kodi label and imported the official Kodi symbol for the top shortcut.
+
+Validation: ARM64 compilation with warnings as errors; archive/identity/logo/no-signature checks;
+protocol and queue tests; discovery tests for fragmented greetings, busy services, invalid replies, deadlines and no outbound commands.
+Physical touch behavior and first-run scanning on the actual iPhone remain unverified until this build is installed and used.
+Controller service is unchanged at 2.1; no new ELF required.
