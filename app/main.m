@@ -230,6 +230,65 @@ static void Round(UIView *view,CGFloat radius) {
 - (BOOL)accessRight { [self emit:QP_RIGHT]; return _active; }
 @end
 
+@interface QPKeyboardController : UIViewController <UITextFieldDelegate>
+@property(nonatomic,strong) QPConnection *link;
+@property(nonatomic,strong) UITextField *field;
+@property(nonatomic,strong) UILabel *status;
+@property(nonatomic,strong) NSTimer *timer;
+@property(nonatomic) BOOL ending;
+@end
+@implementation QPKeyboardController
+- (void)viewDidLoad {
+    [super viewDidLoad];self.title=@"Keyboard";self.view.backgroundColor=Color(0x151718);
+    self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"Close" style:UIBarButtonItemStylePlain target:self action:@selector(closeEditor)];
+    self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"Enter" style:UIBarButtonItemStyleDone target:self action:@selector(submitEditor)];
+    UILabel *help=Label(@"Open a text field on the TV. Text below types live into that field. Enter submits it; Close disconnects without Enter.",15,UIFontWeightRegular,Color(0xAAAAAA));help.numberOfLines=0;
+    _status=Label(@"Connecting keyboard…",14,UIFontWeightMedium,Color(0x53D889));_status.numberOfLines=0;
+    _field=[UITextField new];_field.textColor=UIColor.whiteColor;_field.backgroundColor=Color(0x25282A);
+    _field.borderStyle=UITextBorderStyleRoundedRect;_field.placeholder=@"Type here…";_field.font=[UIFont systemFontOfSize:20];
+    _field.delegate=self;_field.autocorrectionType=UITextAutocorrectionTypeNo;_field.autocapitalizationType=UITextAutocapitalizationTypeNone;
+    _field.smartQuotesType=UITextSmartQuotesTypeNo;_field.smartDashesType=UITextSmartDashesTypeNo;_field.spellCheckingType=UITextSpellCheckingTypeNo;
+    _field.keyboardType=UIKeyboardTypeASCIICapable;_field.returnKeyType=UIReturnKeySend;_field.enabled=NO;
+    [_field addTarget:self action:@selector(textChanged) forControlEvents:UIControlEventEditingChanged];
+    UIStackView *stack=[[UIStackView alloc] initWithArrangedSubviews:@[help,_field,_status]];stack.axis=UILayoutConstraintAxisVertical;stack.spacing=20;stack.translatesAutoresizingMaskIntoConstraints=NO;
+    [self.view addSubview:stack];[NSLayoutConstraint activateConstraints:@[
+        [stack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:24],
+        [stack.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24],
+        [stack.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24],
+        [_field.heightAnchor constraintEqualToConstant:52]]];
+    self.modalInPresentation=YES;
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];[_link openKeyboard];
+    __weak QPKeyboardController *weakSelf=self;
+    _timer=[NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *timer){
+        (void)timer;[weakSelf updateEditor];
+    }];[self updateEditor];
+}
+- (void)updateEditor {
+    _status.text=_link.keyboardMessage?:@"Keyboard unavailable";
+    BOOL enabled=_link.keyboardActive&&_link.keyboardConnected&&!_link.keyboardClosing&&!_ending;
+    if(enabled&&!_field.enabled){_field.enabled=YES;[_field becomeFirstResponder];}else _field.enabled=enabled;
+    self.navigationItem.rightBarButtonItem.enabled=enabled;
+    if(!_link.ready || (_ending&&!_link.keyboardActive)) [self dismissViewControllerAnimated:YES completion:nil];
+}
+- (BOOL)textField:(UITextField *)field shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)text {
+    NSString *value=[field.text?:@"" stringByReplacingCharactersInRange:range withString:text];
+    NSData *bytes=[value dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:NO];
+    if(!bytes||bytes.length>128)return NO;
+    const uint8_t *p=bytes.bytes;for(NSUInteger i=0;i<bytes.length;i++)if(p[i]<32||p[i]>126)return NO;
+    return YES;
+}
+- (void)textChanged { [_link updateKeyboardText:_field.text?:@""]; }
+- (BOOL)textFieldShouldReturn:(UITextField *)field {(void)field;[self submitEditor];return NO;}
+- (void)submitEditor {if(_ending)return;[self textChanged];_ending=YES;[_field resignFirstResponder];[_link closeKeyboardWithEnter:YES];[self updateEditor];}
+- (void)closeEditor {_ending=YES;_field.text=@"";[_link closeKeyboardWithEnter:NO];[self dismissViewControllerAnimated:YES completion:nil];}
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];[_timer invalidate];_timer=nil;_field.text=@"";
+    if(!_ending) [_link closeKeyboardWithEnter:NO];
+}
+@end
+
 @interface QPViewController : UIViewController {
     QPInitialization _initialization;
     QPEnsureSession _ensureSession;
@@ -355,7 +414,7 @@ static void Round(UIView *view,CGFloat radius) {
     }
     _result=Label(@"",10,UIFontWeightRegular,Color(0xAAAAAA)); _result.textAlignment=NSTextAlignmentCenter;
     _result.numberOfLines=2; [_canvas addSubview:_result]; [self refresh];
-    _initializeHint=Label(@"If another controller takes over, use ••• → Turn On Controller.",11,UIFontWeightRegular,Color(0x999999));
+    _initializeHint=Label(@"If another controller takes over, use ••• → Initialize Controller.",11,UIFontWeightRegular,Color(0x999999));
     _connectionBar=[UIView new]; _connectionBar.backgroundColor=Color(0x53D889);
     _connectionBar.layer.cornerRadius=1.5; _connectionBar.hidden=YES; [_canvas addSubview:_connectionBar];
     _initializeHint.numberOfLines=2; _initializeHint.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:_initializeHint];
@@ -588,10 +647,10 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)offerInitialization {
     _needsInitializePrompt=NO;
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Turn On Controller"
-        message:@"Select your profile on the TV if asked. If another controller takes over, use ••• → Turn On Controller again. Selecting your profile switches off the other controller."
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Initialize Controller"
+        message:@"Select your profile on the TV if asked. If another controller takes over, use ••• → Initialize Controller again. Selecting your profile switches off the other controller."
         preferredStyle:UIAlertControllerStyleAlert];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Turn On Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self requestInitialization];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Not now" style:UIAlertActionStyleCancel handler:nil]];
@@ -604,48 +663,33 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)showKeyboard {
     [self clearControls];
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Keyboard"
-        message:@"Open a text field on your PS5, then send text here. Up to 128 English letters, numbers, spaces or punctuation. Send does not press Enter."
-        preferredStyle:UIAlertControllerStyleAlert];
-    [sheet addTextFieldWithConfigurationHandler:^(UITextField *field){
-        field.placeholder=@"Text to type"; field.autocorrectionType=UITextAutocorrectionTypeNo;
-        field.autocapitalizationType=UITextAutocapitalizationTypeNone;
-        field.smartQuotesType=UITextSmartQuotesTypeNo; field.smartDashesType=UITextSmartDashesTypeNo;
-        field.keyboardType=UIKeyboardTypeASCIICapable;
-    }];
-    __weak UIAlertController *weakSheet=sheet;
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Send" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a; NSString *text=weakSheet.textFields.firstObject.text?:@"";
-        weakSheet.textFields.firstObject.text=@""; [self.link typeText:text];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:sheet animated:YES completion:nil];
+    QPKeyboardController *keyboard=[QPKeyboardController new];keyboard.link=_link;
+    UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:keyboard];
+    navigation.modalPresentationStyle=UIModalPresentationFullScreen;
+    [self presentViewController:navigation animated:YES completion:nil];
 }
 - (void)showConnection {
     [self clearControls];
     NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.message?:@""];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:_link.ready?@"PS5 connection":@"Connect to PS5" message:detail preferredStyle:UIAlertControllerStyleAlert];
-    UIAlertAction *initialize=[UIAlertAction actionWithTitle:@"Turn On Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a; [self requestInitialization];
-    }];
-    initialize.enabled=!qp_initialization_pending(&_initialization)&&!_link.disconnectingController; [sheet addAction:initialize];
-    if(_link.ready) {
-        UIAlertAction *disconnect=[UIAlertAction actionWithTitle:@"Disconnect controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+    BOOL controllerConnected=_link.ready&&_link.padReady;
+    if(controllerConnected) {
+        UIAlertAction *disconnect=[UIAlertAction actionWithTitle:@"Disconnect Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
             (void)a; [self disconnectController];
         }];
-        disconnect.enabled=_link.supportsDisconnectController&&!_link.disconnectingController; [sheet addAction:disconnect];
+        disconnect.enabled=_link.supportsDisconnectController&&!_link.disconnectingController;
+        [sheet addAction:disconnect];
+    } else {
+        UIAlertAction *initialize=[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            (void)a; [self requestInitialization];
+        }];
+        initialize.enabled=!qp_initialization_pending(&_initialization)&&!_link.disconnectingController&&!_link.controlBusy&&!_ensureSession.active&&!_link.connecting;
+        [sheet addAction:initialize];
     }
-    if(!_link.ready || !_link.supportsDisconnectController) [sheet addAction:[UIAlertAction actionWithTitle:(_link.ready||_link.connecting)?@"Close connection":@"Connect" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a;
-        [self cancelEnsureSession]; qp_initialization_cancel(&self->_initialization); self.needsInitializePrompt=NO;
-        if(self.link.ready||self.link.connecting) { self.wantsConnection=NO; [self.link disconnect:@"Disconnected"]; }
-        else if(self.host.length) { self.wantsConnection=YES; [self startEnsureSession]; }
-        else [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
-    }]];
     UIAlertAction *keyboard=[UIAlertAction actionWithTitle:@"Keyboard…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self dismissViewControllerAnimated:YES completion:^{ [self showKeyboard]; }];
     }];
-    keyboard.enabled=_link.ready&&_link.supportsTextInput&&_link.profileAssigned&&!_link.controlBusy;
+    keyboard.enabled=_link.ready&&_link.supportsLiveKeyboard&&_link.profileAssigned&&!_link.controlBusy;
     [sheet addAction:keyboard];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Find / Add PS5" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];

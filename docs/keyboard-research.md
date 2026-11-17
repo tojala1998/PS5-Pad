@@ -1,10 +1,12 @@
 # System-wide keyboard research
 
-Investigated on November 16, 2026. Version 0.4.7 now includes manual text entry
-through the three-dot menu and service 2.4. Automatic keyboard-open/close detection
-remains unverified. The isolated backend test succeeded on firmware 13.60;
-the integrated phone UI still needs a live test. See [0.4.7 notes](PS5-Pad-0.4.7-notes.txt).
-The contextual-detection design below remains a proposal, not shipped behavior.
+Investigated on November 16, 2026. Version 0.4.9 includes a manual live keyboard
+editor through the three-dot menu and service 2.5. Automatic keyboard-open/close
+detection remains unverified. The isolated backend test succeeded on firmware
+13.60, but the owner reported no text from the integrated 0.4.7 batch sender.
+The 0.4.9 persistent editor has passed host tests and awaits TV confirmation.
+See [0.4.9 notes](PS5-Pad-0.4.9-notes.txt). The contextual-detection design below
+remains a proposal, not shipped behavior.
 
 The requested behavior is an iPhone keyboard that appears when the console opens
 its text keyboard, across Kodi, VLC, Prospero and other apps. The connection must

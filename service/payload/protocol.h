@@ -28,6 +28,8 @@ enum pmcp_type {
     PMCP_GET_USER = 9,  /* no request payload; reply: struct pmcp_user (requires PMCP_FLAG_USER_NAME) */
     PMCP_GET_USERS = 10, /* no request payload; reply: struct pmcp_users (requires PMCP_FLAG_USERS) */
     PMCP_GET_PADS = 11, /* no request payload; reply: struct pmcp_pads (requires PMCP_FLAG_PADS) */
+    QP_LIVE_KEYBOARD = 134, /* op 0 open,1 edit(u16 backspaces + ASCII),2 close,3 Enter+close; i32 status,u32 opened */
+    QP_KEYBOARD_LEASE = 135, /* empty renews editor lease; byte 1 cancels queued keys immediately; no direct reply */
     QP_TYPE_TEXT = 133, /* 1..128 printable ASCII bytes; reply i32 status,u32 characters */
     QP_STATUS = 128,    /* QuietPad extension; empty request, qp_status response */
     QP_INITIALIZE = 129,/* remove only our pad, inspect foreground controller, recreate our pad */
@@ -177,3 +179,5 @@ _Static_assert(sizeof(struct pmcp_ack) == 8, "ack is 8 bytes");
 _Static_assert(sizeof(struct pmcp_command) == 40, "command is 40 bytes");
 
 #endif
+
+#define QP_FLAG_LIVE_KEYBOARD 0x1000000

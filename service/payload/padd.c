@@ -29,8 +29,9 @@
 #include "system.h"
 #include "owner_monitor.h"
 #include "text_input.h"
+#include "live_keyboard.h"
 
-#define PADD_VERSION 0x0204
+#define PADD_VERSION 0x0205
 #define PAD_DETACH_SETTLE_MS 180u
 #define PAD_NEUTRAL_WARMUP_MS 200u
 
@@ -54,6 +55,7 @@ struct daemon {
     } pad;
     struct owner_monitor ownership;
     struct text_job text;
+    struct live_keyboard keyboard;
     int profile_assigned, yielded, handoff_pending;
     uint64_t last_handoff_retry;
     int add_status;
@@ -172,6 +174,7 @@ static void force_neutral(struct daemon *d, const char *reason) {
 static void drop_client(struct daemon *d, const char *reason) {
     if (d->client_fd < 0) return;
     text_cancel(&d->text,ECANCELED);
+    live_cancel(&d->keyboard,ECANCELED); d->keyboard.busy=0;
     close(d->client_fd);
     d->client_fd = -1;
     d->rx_len = 0;
@@ -181,7 +184,7 @@ static void drop_client(struct daemon *d, const char *reason) {
 
 static uint32_t flags(const struct daemon *d) {
     return (d->pad.ready ? PMCP_FLAG_PAD_READY : 0) | PMCP_FLAG_TOUCH_UNMAPPED |
-        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER | QP_FLAG_TEXT_INPUT |
+        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER | QP_FLAG_TEXT_INPUT | QP_FLAG_LIVE_KEYBOARD |
         (d->ownership.enabled ? QP_FLAG_OWNERSHIP : 0) |
         (d->ownership.enabled && d->ownership.synced ? QP_FLAG_MONITOR_READY : 0) |
         (d->profile_assigned ? QP_FLAG_PROFILE_ASSIGNED : 0) |
@@ -258,6 +261,7 @@ static int initialize_controller(struct daemon *d) {
  * neutralize input, because they cannot distinguish sleep from an ended session. */
 static int disconnect_controller(struct daemon *d) {
     text_cancel(&d->text,ECANCELED);
+    live_cancel(&d->keyboard,ECANCELED);
     neutral(&d->pad.state);
     d->last_state_ms = now_ms();
     d->pad.ready = 0; d->profile_assigned=0;
@@ -305,9 +309,20 @@ static void ownership_event(void *context,struct owner_event e) {
 
 static void handle_message(struct daemon *d, uint8_t type, const uint8_t *payload, uint16_t length) {
     switch (type) {
+    case QP_KEYBOARD_LEASE:
+        if(length==1 && payload[0]==1) {live_cancel(&d->keyboard,ECANCELED);return;}
+        if(length) {send_error(d,PMCP_ERR_BAD_LENGTH,"lease must be empty");return;}
+        if(d->keyboard.opened && !d->keyboard.cleanup) d->keyboard.lease=now_ms()+1800;
+        return;
+    case QP_LIVE_KEYBOARD: {
+        int32_t status=(d->ownership.enabled && !d->profile_assigned)?EACCES:
+            ((d->text.active||d->text.cleanup)?EBUSY:live_request(&d->keyboard,d->pad.user_id,payload,length,now_ms()));
+        if(status) {int32_t result[2]={status,d->keyboard.opened};send_message(d,type,result,sizeof result);}
+        return;
+    }
     case QP_TYPE_TEXT: {
         int32_t status=(d->ownership.enabled && !d->profile_assigned)?EACCES:
-            text_begin(&d->text,d->pad.user_id,payload,length,now_ms());
+            ((d->keyboard.opened||d->keyboard.cleanup)?EBUSY:text_begin(&d->text,d->pad.user_id,payload,length,now_ms()));
         if(status) {int32_t result[2]={status,0};send_message(d,type,result,sizeof result);}
         return;
     }
@@ -523,6 +538,10 @@ int main(int argc, char **argv) {
         if (ready > 0 && (fds[0].revents & POLLIN)) accept_client(&d);
 
         uint64_t now = now_ms();
+        if(live_tick(&d.keyboard,now)) {
+            int32_t result[2]={d.keyboard.status,d.keyboard.opened};
+            send_message(&d,QP_LIVE_KEYBOARD,result,sizeof result);
+        }
         if(d.text.active && (d.client_fd<0 || now-d.last_rx_ms>1800)) text_cancel(&d.text,ECANCELED);
         if(text_tick(&d.text,now)) {
             int32_t result[2]={d.text.status,(int32_t)d.text.index};
@@ -541,6 +560,8 @@ int main(int argc, char **argv) {
         }
     }
 
+    live_cancel(&d.keyboard,ECANCELED);
+    while(d.keyboard.cleanup) {live_tick(&d.keyboard,now_ms());if(d.keyboard.cleanup) usleep(100000);}
     text_cancel(&d.text,ECANCELED);
     while(d.text.cleanup) {text_tick(&d.text,now_ms());if(d.text.cleanup) usleep(100000);}
     if (stop_requested) log_event("signal", "");

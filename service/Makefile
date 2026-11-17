@@ -2,8 +2,8 @@ BUILD ?= build
 PS5_CC = $(PS5_PAYLOAD_SDK)/bin/prospero-clang
 CFLAGS = -std=c11 -Wall -Wextra -Werror -O1
 KEYBOARD = ../experiments/keyboard-probe/third_party/kbm.c
-COMMON = payload/padd.c payload/owner_monitor.c payload/text_input.c
-HEADERS = payload/protocol.h payload/system.h payload/ownership.h payload/owner_monitor.h payload/text_input.h ../experiments/keyboard-probe/ascii.h ../experiments/keyboard-probe/third_party/kbm.h
+COMMON = payload/padd.c payload/owner_monitor.c payload/text_input.c payload/live_keyboard.c
+HEADERS = payload/protocol.h payload/system.h payload/ownership.h payload/owner_monitor.h payload/text_input.h payload/live_keyboard.h ../experiments/keyboard-probe/ascii.h ../experiments/keyboard-probe/third_party/kbm.h
 
 .PHONY: all check
 all: $(BUILD)/padd-controller.elf
@@ -22,3 +22,4 @@ check: $(BUILD)/padd-host
 	python3 initialization_test.py "$(BUILD)/padd-host"
 	python3 ownership_test.py "$(BUILD)/padd-host"
 	python3 text_input_test.py "$(BUILD)/padd-host"
+	python3 live_keyboard_test.py "$(BUILD)/padd-host"

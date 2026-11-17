@@ -1,0 +1,43 @@
+PS5 Pad 0.4.9 (build 15), controller service 2.5
+
+Controller menu
+One action is shown: Initialize Controller when disconnected, or Disconnect
+Controller when a virtual controller is connected. A service connection by itself
+is not a controller connection. Separate Connect / Close connection entries are
+removed. This includes the menu-only 0.4.8 change.
+
+Live keyboard
+The owner reported that 0.4.7 connected/disconnected a keyboard but did not type
+hello. Its automatic removal after sending reports explained the short lifetime,
+but the missing text's cause was not established. Do not count it as a typing pass.
+
+Opening Keyboard now creates one temporary virtual keyboard, waits one second
+before enabling the editor, then keeps it connected while the editor is active.
+Text changes send live key reports. Backspace and edits within the local text are
+applied by removing the changed suffix and typing its replacement. Edits queue
+behind acknowledgments, so fast typing does not require one connection per key.
+Enter waits for pending text, sends Enter once, releases it and removes the
+keyboard. Close cancels pending typing and disconnects without pressing Enter.
+The field displays only text entered in this session; it does not read the TV's
+existing field or synchronize changes made with another input device.
+
+A keyboard-specific lease is renewed every 500 ms only during the editor session.
+Ordinary controller heartbeats do not keep the keyboard alive. Connection loss,
+app suspension, profile takeover, controller disconnection, closing the editor or
+1.8 seconds without keyboard renewal releases/removes it. Removal failure keeps
+ownership for retry. The virtual controller's sleep behavior remains separate.
+No typed content is written to logs, preferences or files. Text is limited to 128
+printable US-ASCII characters using a US keyboard layout. Automatic detection of
+the PS5 keyboard popup remains unverified and is not implemented.
+
+Validation
+Host socket tests cover persistent typing, backspace, explicit Enter, Close,
+invalid input, cancellation of queued keys, client disconnect without replay,
+lease expiry despite ordinary pings, and controller disconnect cleanup. Existing
+ownership, initialization, protocol, input, lifecycle and discovery checks pass.
+The unsigned ARM64 app was built and its USB copy verified. Service 2.5 was loaded
+and its live-keyboard capability and ownership-monitor connection verified in
+standby, without controller initialization, typing or media-app launch.
+Typing in the actual TV field and the final phone menu still need owner testing.
+
+No device settings, Home Screen layout or signing credentials were changed.

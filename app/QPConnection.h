@@ -36,6 +36,11 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 - (void)checkController;
 - (void)initializeController;
 - (void)disconnectController;
+@property(nonatomic,readonly) BOOL supportsLiveKeyboard,keyboardConnected,keyboardActive,keyboardClosing;
+@property(nonatomic,readonly,copy) NSString *keyboardMessage;
+- (void)openKeyboard;
+- (void)updateKeyboardText:(NSString *)text;
+- (void)closeKeyboardWithEnter:(BOOL)enter;
 - (void)typeText:(NSString *)text;
 - (void)launchVLC;
 - (void)launchKodi;

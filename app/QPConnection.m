@@ -23,6 +23,10 @@
     NSTimeInterval _connectTimeout;
     uint8_t _controlType;
     NSData *_controlPayload;
+    NSString *_keyboardDesired,*_keyboardSent,*_keyboardInFlight;
+    BOOL _keyboardExit,_keyboardEnter;
+    uint8_t _keyboardOp;
+    NSTimeInterval _keyboardLastLease;
     BOOL _controlSent;
     BOOL _initializationFailed, _disconnectRequested;
     NSTimeInterval _controlStarted;
@@ -30,6 +34,8 @@
     NSString *_lastAction;
     int32_t _lastActionStatus;
 }
+@property(nonatomic,readwrite) BOOL supportsLiveKeyboard,keyboardConnected,keyboardActive,keyboardClosing;
+@property(nonatomic,readwrite,copy) NSString *keyboardMessage;
 @property(nonatomic,readwrite) BOOL ready;
 @property(nonatomic,readwrite) QPConnectionFailure failureKind;
 @property(nonatomic,readwrite) BOOL controllerChecked;
@@ -78,6 +84,7 @@
 }
 - (void)readOwnershipFlags:(uint32_t)flags {
     _supportsTextInput=(flags&QP_CAP_TEXT_INPUT)!=0;
+    _supportsLiveKeyboard=(flags&QP_CAP_LIVE_KEYBOARD)!=0;
     _supportsOwnership=(flags&QP_CAP_OWNERSHIP)!=0;
     _profileAssigned=_supportsOwnership&&(flags&QP_PROFILE_ASSIGNED)!=0;
     _waitingForProfile=_supportsOwnership&&(flags&QP_PROFILE_PENDING)!=0;
@@ -98,6 +105,9 @@
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
     _controlPayload=nil; _supportsTextInput=NO;
+    _supportsLiveKeyboard=_keyboardConnected=_keyboardActive=_keyboardClosing=NO;
+    _keyboardDesired=_keyboardSent=_keyboardInFlight=nil; _keyboardExit=_keyboardEnter=NO;
+    _keyboardMessage=@"Keyboard disconnected";
     _supportsOwnership=_profileAssigned=_waitingForProfile=_monitorReady=NO;
     _ready=NO; _padReady=NO; _connecting=NO; _failureKind=QPConnectionFailureNone; _controllerChecked=NO; _inflight=0; _state=qp_neutral(); _dirty=NO;
     _controlBusy=NO; _controlType=0; _controlSent=NO; _supportsControl=NO; _supportsDisconnectController=NO; _disconnectRequested=NO; _initializationFailed=NO; qp_input_reset(&_inputs);
@@ -165,7 +175,7 @@
         (void)timer; QPConnection *self=weakSelf; if(!self) return;
         NSTimeInterval now=[self now];
         if(self.ready) {
-            if(self.controlBusy && now-self->_controlStarted>(self->_controlType==QP_TYPE_TEXT?14:8)) {
+            if(self.controlBusy && now-self->_controlStarted>((self->_controlType==QP_TYPE_TEXT||self->_controlType==QP_LIVE_KEYBOARD)?30:8)) {
                 [self failConnection:@"PS5 did not finish the request. Check the TV before retrying." unavailable:NO]; return;
             }
             if (!self.controlBusy && ((self->_inflight && now-self->_sentAt>0.7) || now-self->_lastPong>3.5)) {
@@ -173,6 +183,11 @@
             }
             self->_dirty=YES; [self flush];
             if(now-self->_lastPing>=1) [self ping];
+            if(self.keyboardActive && now-self->_keyboardLastLease>=0.5) {
+                uint8_t lease[8];qp_header(lease,QP_KEYBOARD_LEASE,0);
+                [self sendData:[NSData dataWithBytes:lease length:sizeof lease]];self->_keyboardLastLease=now;
+            }
+            [self pumpKeyboard];
         } else if(now-self->_started>self->_connectTimeout) {
             BOOL unavailable=[self serviceUnavailableForError:nil deadline:YES];
             [self failConnection:@"Connection timed out. Use ••• to retry." unavailable:unavailable];
@@ -298,6 +313,27 @@
             if(lostPad) [self releaseControls];
             if(!_controlBusy) _message=[self controllerMessage];
             [self publish];
+        } else if(kind==QP_LIVE_KEYBOARD && length==8 && _ready) {
+            if(!_controlSent || _controlType!=kind) { [self failConnection:@"Unexpected keyboard response." unavailable:NO]; return; }
+            int32_t status=(int32_t)qp_u32(p);_keyboardConnected=qp_u32(p+4)!=0;
+            _controlBusy=NO;_controlType=0;_controlSent=NO;_lastPong=[self now];_sentAt=_lastPong;
+            if(status && _keyboardExit && !_keyboardEnter && !_keyboardConnected) {
+                _keyboardActive=_keyboardClosing=NO;_keyboardDesired=_keyboardSent=_keyboardInFlight=nil;
+                _keyboardMessage=@"Keyboard disconnected";
+            } else if(status) {
+                _keyboardDesired=_keyboardSent=_keyboardInFlight=nil;
+                _keyboardMessage=[NSString stringWithFormat:@"Keyboard stopped (0x%08X). Close and retry.",(unsigned)status];
+                _keyboardActive=NO;_keyboardClosing=NO;
+                /* Stop renewing: the service removes any surviving keyboard by lease expiry. */
+            } else if(_keyboardOp>=2) {
+                _keyboardActive=_keyboardClosing=NO;_keyboardDesired=_keyboardSent=_keyboardInFlight=nil;
+                _keyboardMessage=@"Keyboard disconnected";
+            } else {
+                if(_keyboardOp==1) _keyboardSent=_keyboardInFlight;
+                _keyboardInFlight=nil;_keyboardMessage=@"Connected · typing live";
+                [self pumpKeyboard];
+            }
+            [self flush];[self publish];
         } else if(kind==QP_TYPE_TEXT && length==8 && _ready) {
             if(!_controlSent || _controlType!=kind) { [self failConnection:@"Unexpected keyboard response." unavailable:NO]; return; }
             int32_t status=(int32_t)qp_u32(p); uint32_t count=qp_u32(p+4);
@@ -364,7 +400,7 @@
     [self invalidateInputFeedback];
     _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _controlBusy=YES; _controlType=kind; _controlSent=NO; _controlStarted=[self now];
-    _message=kind==QP_TYPE_TEXT?@"Typing…":(kind==QP_DISCONNECT_CONTROLLER?@"Disconnecting controller…":(kind==QP_INITIALIZE?@"Turning on controller…":(kind==QP_STATUS?@"Checking controller…":(kind==QP_KODI?@"Opening Kodi…":@"Opening VLC…"))));
+    _message=kind==QP_LIVE_KEYBOARD?@"Keyboard session active":(kind==QP_TYPE_TEXT?@"Typing…":(kind==QP_DISCONNECT_CONTROLLER?@"Disconnecting controller…":(kind==QP_INITIALIZE?@"Turning on controller…":(kind==QP_STATUS?@"Checking controller…":(kind==QP_KODI?@"Opening Kodi…":@"Opening VLC…")))));
     [self flush]; [self publish];
 }
 - (BOOL)disconnectingController { return _disconnectRequested || _controlType==QP_DISCONNECT_CONTROLLER; }
@@ -384,6 +420,52 @@
     [self invalidateInputFeedback];
     _disconnectRequested=YES; _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _message=@"Disconnecting controller…"; [self tryDisconnectController]; [self publish];
+}
+- (void)sendKeyboardOp:(uint8_t)op payload:(NSData *)payload {
+    _keyboardOp=op;_controlPayload=payload;[self control:QP_LIVE_KEYBOARD];
+}
+- (void)openKeyboard {
+    if(!_ready||!_supportsLiveKeyboard||!_profileAssigned||_controlBusy||_keyboardActive)return;
+    _keyboardActive=YES;_keyboardClosing=_keyboardExit=_keyboardEnter=NO;_keyboardConnected=NO;
+    _keyboardDesired=@"";_keyboardSent=@"";_keyboardInFlight=nil;_keyboardLastLease=0;
+    _keyboardMessage=@"Connecting keyboard…";uint8_t op=0;
+    [self sendKeyboardOp:op payload:[NSData dataWithBytes:&op length:1]];
+}
+- (void)updateKeyboardText:(NSString *)text {
+    if(!_keyboardActive||_keyboardClosing)return;
+    NSData *bytes=[text dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:NO];
+    if(!bytes||bytes.length>128)return;
+    const uint8_t *p=bytes.bytes;for(NSUInteger i=0;i<bytes.length;i++)if(p[i]<32||p[i]>126)return;
+    _keyboardDesired=[text copy];[self pumpKeyboard];
+}
+- (void)closeKeyboardWithEnter:(BOOL)enter {
+    if(!_keyboardActive)return;
+    _keyboardExit=YES;_keyboardEnter=enter;_keyboardClosing=YES;
+    if(!enter) {
+        _keyboardDesired=_keyboardSent;
+        if(_controlBusy&&_controlType==QP_LIVE_KEYBOARD) {
+            uint8_t cancel[9];qp_header(cancel,QP_KEYBOARD_LEASE,1);cancel[8]=1;
+            [self sendData:[NSData dataWithBytes:cancel length:sizeof cancel]];
+        }
+    }
+    [self pumpKeyboard];[self publish];
+}
+- (void)pumpKeyboard {
+    if(!_keyboardActive||!_keyboardConnected||_controlBusy||!_ready)return;
+    if(_keyboardExit&&!_keyboardEnter) {
+        uint8_t op=2;[self sendKeyboardOp:op payload:[NSData dataWithBytes:&op length:1]];return;
+    }
+    if(![_keyboardDesired isEqualToString:_keyboardSent]) {
+        NSUInteger prefix=0,limit=MIN(_keyboardDesired.length,_keyboardSent.length);
+        while(prefix<limit&&[_keyboardDesired characterAtIndex:prefix]==[_keyboardSent characterAtIndex:prefix])prefix++;
+        NSUInteger backspaces=_keyboardSent.length-prefix;
+        uint8_t header[3]={1,(uint8_t)backspaces,(uint8_t)(backspaces>>8)};
+        NSMutableData *edit=[NSMutableData dataWithBytes:header length:3];
+        [edit appendData:[[_keyboardDesired substringFromIndex:prefix] dataUsingEncoding:NSASCIIStringEncoding]];
+        _keyboardInFlight=_keyboardDesired;_keyboardMessage=@"Typing live…";
+        [self sendKeyboardOp:1 payload:edit];return;
+    }
+    if(_keyboardExit) {uint8_t op=3;[self sendKeyboardOp:op payload:[NSData dataWithBytes:&op length:1]];}
 }
 - (void)typeText:(NSString *)text {
     if(!_ready || !_supportsTextInput || !_profileAssigned || _controlBusy) return;

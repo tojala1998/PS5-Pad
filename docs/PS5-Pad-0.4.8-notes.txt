@@ -1,0 +1,13 @@
+PS5 Pad 0.4.8 (build 14)
+
+The three-dot menu has one controller action: Initialize Controller when no
+virtual controller is connected, or Disconnect Controller when it is connected.
+A connected service without a virtual controller still offers Initialize.
+An existing virtual controller awaiting profile selection offers Disconnect.
+Separate Connect / Close connection entries are removed. Initialization is
+disabled while connection or controller work is already running. Help text and
+initialization prompts use the same Initialize Controller label.
+
+Controller service 2.4 is unchanged; no helper replacement is required.
+Build checks and USB transfer verification are separate from on-phone menu
+verification, which remains pending owner confirmation.

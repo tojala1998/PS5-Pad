@@ -188,7 +188,7 @@ class SessionEndTests(unittest.TestCase):
 
     def test_explicit_disconnect_is_idempotent_and_does_not_recreate(self):
         with Listener() as listener:
-            self.assertEqual(listener.hello[1], 0x0204)
+            self.assertEqual(listener.hello[1], 0x0205)
             self.assertTrue(listener.hello[4] & 0x20000)
             self.assertEqual(listener.request(132)[0], 0)
             self.assertEqual(listener.events('pad_remove'), [])
