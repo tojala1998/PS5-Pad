@@ -132,7 +132,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-stage-release:
+  stage-release:
     name: Reverify and stage publishable SideStore bundle
     needs: [ps5-helper, ios-ipa]
     runs-on: ubuntu-24.04
