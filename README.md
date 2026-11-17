@@ -112,8 +112,23 @@ IPA under `releases/`, and refreshes `source.json`. Each version includes
 This field is decoded by current SideStore; its older source-types schema omits it. The newest version goes first;
 existing release dates and older source entries are retained. A different IPA
 cannot replace an already staged version: bump the app version before releasing.
-Commit/publish `source.json` and its versioned IPA/report together with the source
-changes. Building alone does not publish. USB transfer remains available.
+The GitHub Actions workflow [Build and publish PS5 Pad for SideStore](.github/workflows/unsigned-build.yml)
+downloads and SHA-256 verifies PS5 Payload SDK v0.43, compiles and tests the
+console ELF on Ubuntu, and builds an **unsigned** iOS IPA on a macOS Xcode runner.
+It verifies that the IPA embeds the ELF from the same run and that its version,
+bundle ID, checksum, and verification report agree.
+
+Pull requests build downloadable test artifacts without publishing. **After a
+successful build on `main`, GitHub Actions automatically publishes the exact
+verified ELF, versioned IPA, verification report, and updated `source.json` in
+one Git commit.** It refuses to overwrite a published version with different
+bytes. A failed build cannot publish a new feed entry. No Apple signing,
+installation, phone UI automation, or PS5 commands occur in this pipeline.
+
+A Git revert can restore an older SideStore feed, but it cannot undo an
+installation already on the iPhone. SideStore may not automatically downgrade
+an installed app; a bad release should normally be corrected with a **newer
+app version/build**. Optional manual USB transfer remains available.
 
 To regenerate the feed without rebuilding:
 
@@ -141,7 +156,7 @@ Use SideStore separately to sign and update the app. The display name is PS5 Pad
 
 ## Console service
 
-Upload `service/prebuilt/padd-controller-2.7.elf` to Payload Manager and load it if it is not already running. It requires the existing TCP 3232 log server for ownership monitoring, listens on TCP 9305, starts in standby and creates its controller only after an explicit Initialize request. It assumes the console is already jailbroken; neither the iPhone app nor the service performs a jailbreak.
+Upload the version-matched PS5 helper ELF from `service/prebuilt/` to Payload Manager and load it if it is not already running. It requires the existing TCP 3232 log server for ownership monitoring, listens on TCP 9305, starts in standby and creates its controller only after an explicit Initialize request. It assumes the console is already jailbroken; neither the iPhone app nor the service performs a jailbreak.
 
 The source and its original license are under `service/`. Build with [PS5 Payload SDK v0.43](https://github.com/ps5-payload-dev/sdk/releases/tag/v0.43):
 
