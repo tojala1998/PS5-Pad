@@ -153,7 +153,7 @@ void system_app_state(struct qp_app_state *out) {
     out->flags=0;out->status=EIO;out->focused_app=out->kodi_app=-1;
     memset(out->focused_title,0,sizeof out->focused_title);
     const char *path=getenv("PADD_TEST_APP_STATE_FILE");if(!path)return;
-    FILE *f=fopen(path,"r");if(!f)return;char state[32]={0};(void)fgets(state,sizeof state,f);fclose(f);
+    FILE *f=fopen(path,"r");if(!f)return;char state[32]={0};if(!fgets(state,sizeof state,f)){fclose(f);return;}fclose(f);
     if(!strcmp(state,"unknown"))return;
     out->status=0;out->flags=QP_APP_RUNNING_KNOWN|QP_APP_FOCUS_KNOWN;
     if(!strcmp(state,"kodi") || !strcmp(state,"home")) {out->kodi_app=123;out->flags|=QP_APP_KODI_RUNNING;}
