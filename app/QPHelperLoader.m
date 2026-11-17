@@ -1,5 +1,6 @@
 #import "QPHelperLoader.h"
 #import "QPLoaderPolicy.h"
+#import "QPHelperUpdate.h"
 #import <Network/Network.h>
 #include <errno.h>
 
@@ -13,10 +14,14 @@
     BOOL _probeConnected,_probeBlocked;
     NSMutableArray *_trace;
     unsigned _probes;
+    QPHelperUpdate _update;
+    NSUInteger _runGeneration;
+    unsigned _exitProbes;
 }
 @end
 @implementation QPHelperLoader
 - (void)cancel {
+    _runGeneration++;
     _active=NO;if(_socket){nw_connection_cancel(_socket);_socket=nil;}
     [_session invalidateAndCancel];_session=nil;_image=nil;
 }
@@ -41,6 +46,7 @@
 - (void)start:(NSString *)host image:(NSData *)image {
     [self cancel];_active=YES;_host=[host copy];_image=image;
     _launched=_loaderConnected=_sendStarted=_usedManager=NO;_probes=0;_trace=[NSMutableArray new];
+    _update=QP_UPDATE_NONE;_exitProbes=0;NSUInteger run=_runGeneration;
     if(!qp_loader_image_valid(image.bytes,image.length)){[self finish:@"The bundled helper is not a valid PS5 ELF."];return;}
     NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;
     config.timeoutIntervalForRequest=6;config.timeoutIntervalForResource=10;config.HTTPShouldSetCookies=NO;
@@ -48,13 +54,14 @@
     _session=[NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:NSOperationQueue.mainQueue];
     [self say:@"Checking controller service…"];[self probe];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,70*NSEC_PER_SEC),dispatch_get_main_queue(),^{
-        if(self->_active)[self finish:@"Service startup timed out. Check the PS5 before retrying."];
+        if(self->_active&&self->_runGeneration==run)[self finish:@"Service startup timed out. Check the PS5 before retrying."];
     });
 }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completionHandler {
     (void)session;(void)task;(void)response;(void)request;completionHandler(nil);
 }
 - (void)http:(NSString *)method path:(NSString *)path body:(NSData *)body done:(void (^)(NSData *,NSString *))done {
+    NSUInteger run=_runGeneration;
     NSURLComponents *parts=[NSURLComponents new];parts.scheme=@"http";parts.host=_host;parts.port=@8084;
     NSURL *url=[NSURL URLWithString:path relativeToURL:parts.URL];
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];request.HTTPMethod=method;request.HTTPBody=body;
@@ -62,7 +69,7 @@
     [request setValue:@"application/octet-stream" forHTTPHeaderField:@"Content-Type"];
     [[_session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){
         dispatch_async(dispatch_get_main_queue(),^{
-            if(!self->_active)return;
+            if(!self->_active||self->_runGeneration!=run)return;
             NSInteger status=[response isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)response).statusCode:0;
             [self record:[NSString stringWithFormat:@"Payload Manager %@",method] state:(int)status code:(int)error.code];
             NSString *failure=error?@"Payload Manager did not respond.":(status!=200?[NSString stringWithFormat:@"Payload Manager returned HTTP %ld.",(long)status]:(data.length>1024*1024?@"Payload Manager response was too large.":nil));
@@ -73,9 +80,68 @@
 - (void)probeFailed:(nw_connection_t)c absent:(BOOL)absent {
     if(!_active||_socket!=c)return;nw_connection_cancel(c);_socket=nil;
     [self record:absent?@"helper_absent":@"probe_did_not_confirm_absence" state:0 code:0];
+    if(_update==QP_UPDATE_ABSENCE&&!absent) {
+        [self finish:@"Could not confirm the old helper stopped. No replacement was sent."];return;
+    }
+    /* The old service has now fully released its port. End the shutdown
+     * deadline before starting a potentially slower ELF/manager transfer. */
+    if(_update==QP_UPDATE_ABSENCE&&absent)_update=QP_UPDATE_NONE;
     if(!_launched){if(absent)[self sendDirect];else [self finish:@"Controller service did not answer safely; no duplicate helper was sent."];return;}
     if(++_probes>=8){[self finish:@"Helper was sent but did not become ready. Check the PS5 before retrying."];return;}
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{if(self->_active)[self probe];});
+    NSUInteger run=_runGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{if(self->_active&&self->_runGeneration==run)[self probe];});
+}
+- (void)waitForOldListener:(nw_connection_t)c {
+    nw_connection_cancel(c);_socket=nil;
+    if(++_exitProbes>=20){[self finish:@"The old helper is still running. No replacement was sent."];return;}
+    NSUInteger run=_runGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,350*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        if(self->_active&&self->_runGeneration==run)[self probe];
+    });
+}
+- (void)sendUpdateCommand:(uint8_t)kind socket:(nw_connection_t)c {
+    uint8_t frame[8];qp_header(frame,kind,0);
+    dispatch_data_t data=dispatch_data_create(frame,sizeof frame,dispatch_get_main_queue(),DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    nw_connection_send(c,data,NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT,true,^(nw_error_t error){
+        if(error&&self->_active&&self->_socket==c)[self finish:@"Helper update interrupted. No replacement was sent."];
+    });
+}
+- (void)readUpdate:(nw_connection_t)c {
+    nw_connection_receive(c,1,4096,^(dispatch_data_t content,nw_content_context_t context,bool complete,nw_error_t error){
+        (void)context;if(!self->_active||self->_socket!=c)return;
+        if(content)dispatch_data_apply(content,^bool(dispatch_data_t region,size_t offset,const void *buffer,size_t size){
+            (void)region;(void)offset;[self->_hello appendBytes:buffer length:size];return true;
+        });
+        while(self->_hello.length>=8) {
+            const uint8_t *p=self->_hello.bytes;
+            if(!qp_valid_header(p)){[self finish:@"Invalid helper update response. No replacement was sent."];return;}
+            size_t size=qp_u16(p+6);if(self->_hello.length<8+size)break;
+            if(!qp_helper_update_reply(&self->_update,p[5],p+8,size)) {
+                [self finish:@"The helper could not release its controller or confirm stopping. No replacement was sent."];return;
+            }
+            [self->_hello replaceBytesInRange:NSMakeRange(0,8+size) withBytes:NULL length:0];
+            if(self->_update==QP_UPDATE_STOP) {
+                [self say:@"Stopping outdated helper…"];[self sendUpdateCommand:6 socket:c];
+            }
+        }
+        if(error||complete) {
+            if(!qp_helper_update_eof(&self->_update,complete&&!error,self->_hello.length!=0)) {
+                [self finish:@"Clean helper shutdown was not confirmed. No replacement was sent."];return;
+            }
+            [self say:@"Verifying old helper stopped…"];[self waitForOldListener:c];return;
+        }
+        [self readUpdate:c];
+    });
+}
+- (void)beginUpdate:(nw_connection_t)c {
+    _update=QP_UPDATE_DETACH;_hello=[NSMutableData new];
+    [self say:@"Updating helper · releasing controller…"];
+    [self sendUpdateCommand:QP_DISCONNECT_CONTROLLER socket:c];[self readUpdate:c];
+    NSUInteger run=_runGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,12*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+        if(self->_active&&self->_runGeneration==run&&self->_update!=QP_UPDATE_NONE&& !self->_launched)
+            [self finish:@"Helper shutdown timed out. No replacement was sent."];
+    });
 }
 - (void)readHello:(nw_connection_t)c {
     nw_connection_receive(c,1,28,^(dispatch_data_t content,nw_content_context_t context,bool complete,nw_error_t error){
@@ -83,6 +149,14 @@
         if(content)dispatch_data_apply(content,^bool(dispatch_data_t region,size_t offset,const void *buffer,size_t size){(void)region;(void)offset;[self->_hello appendBytes:buffer length:size];return true;});
         if(self->_hello.length>=28){
             if(!qp_loader_hello_valid(self->_hello.bytes,self->_hello.length,self->_launched)){[self finish:@"Unexpected or outdated helper response; startup was not confirmed."];return;}
+            const uint8_t *p=self->_hello.bytes;uint16_t version=qp_u16(p+10);uint32_t flags=qp_u32(p+20);
+            if(qp_helper_outdated(version)) {
+                if(self->_update==QP_UPDATE_ABSENCE){[self waitForOldListener:c];return;}
+                if(!qp_helper_can_update(version,flags)){[self finish:@"This helper cannot be safely updated automatically. No replacement was sent."];return;}
+                [self record:@"outdated_helper" state:version code:QP_BUNDLED_HELPER_VERSION];
+                [self beginUpdate:c];return;
+            }
+            self->_update=QP_UPDATE_NONE;
             nw_connection_cancel(c);self->_socket=nil;
             [self say:@"Controller service verified."];
             if(self->_usedManager){
@@ -97,6 +171,7 @@
     if(path){nw_path_unsatisfied_reason_t why=nw_path_get_unsatisfied_reason(path);
         if(why==nw_path_unsatisfied_reason_local_network_denied||why==nw_path_unsatisfied_reason_wifi_denied||why==nw_path_unsatisfied_reason_cellular_denied)_probeBlocked=YES;}
     BOOL refused=error&&nw_error_get_error_domain(error)==nw_error_domain_posix&&nw_error_get_error_code(error)==ECONNREFUSED;
+    if(_update==QP_UPDATE_ABSENCE)return qp_helper_replacement_allowed(_update,_probeConnected,_probeBlocked,refused);
     return qp_loader_service_absent(_probeConnected,_probeBlocked,path&&nw_path_get_status(path)==nw_path_status_satisfied,refused,deadline);
 }
 - (void)probe {
@@ -111,7 +186,10 @@
         }else if(state==nw_connection_state_failed)[self probeFailed:c absent:[self probeAbsent:c error:error deadline:NO]];
     });
     nw_connection_start(c);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self->_active&&self->_socket==c)[self probeFailed:c absent:[self probeAbsent:c error:nil deadline:YES]];});
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+        if(self->_active&&self->_socket==c&&self->_update!=QP_UPDATE_DETACH&&self->_update!=QP_UPDATE_STOP&&self->_update!=QP_UPDATE_EOF)
+            [self probeFailed:c absent:[self probeAbsent:c error:nil deadline:YES]];
+    });
 }
 - (void)directFailed:(nw_connection_t)c {
     if(!_active||_socket!=c)return;nw_connection_cancel(c);_socket=nil;

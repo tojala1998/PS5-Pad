@@ -1,5 +1,6 @@
 #import "QPConnection.h"
 #import "QPHelperLoader.h"
+#import "QPHelperUpdate.h"
 #import <Network/Network.h>
 #import <UIKit/UIKit.h>
 #import "QPInputQueue.h"
@@ -303,6 +304,14 @@
             if(qp_u16(p)!=1 || (!(qp_u32(p+12)&0x10000) && (!(qp_u32(p+12)&1) || (int32_t)qp_u32(p+4)<0 || qp_u32(p+16)))) {
                 [self failConnection:@"PS5 service is running, but its controller isn’t ready." unavailable:NO]; return;
             }
+            /* Check before publishing ready or sending input/initialization.
+             * The loader rechecks its own greeting before touching the helper. */
+            if(qp_helper_outdated(qp_u16(p+2))) {
+                if(!qp_helper_can_update(qp_u16(p+2),qp_u32(p+12))) {
+                    [self failConnection:@"This helper is too old for a safe automatic update. Restart it with the bundled ELF." unavailable:NO]; return;
+                }
+                [self loadServiceAt:[_host copy]]; return;
+            }
             [self readOwnershipFlags:qp_u32(p+12)];
             _padHandle=(int32_t)qp_u32(p+4); _ready=YES; _connecting=NO;
             _supportsControl=(qp_u32(p+12)&QP_CAP_CONTROL)!=0;
@@ -545,6 +554,11 @@
             if(self->_generation==generation)[self connectTo:host timeout:3];
         });
     };
-    [_helperLoader start:host image:elf];[self publish];
+    /* Give the previous control socket time to close before the loader probe,
+     * so a single-client helper does not mistake our updater for a second app. */
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,250*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        if(self->_generation==generation)[self->_helperLoader start:host image:elf];
+    });
+    [self publish];
 }
 @end

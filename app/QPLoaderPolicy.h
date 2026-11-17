@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include "PMCP.h"
+#include "QPHelperVersion.h"
 static inline bool qp_loader_image_valid(const void *data,size_t size) {
     const unsigned char *p=data;
     return p&&size>=64&&size<=64u*1024u*1024u&&!memcmp(p,"\177ELF",4)&&p[4]==2&&p[5]==1&&qp_u16(p+18)==62;
@@ -25,6 +26,6 @@ static inline bool qp_loader_owned_path(const char *path,const char *stem,const 
 }
 static inline bool qp_loader_hello_valid(const unsigned char *p,size_t n,bool launched) {
     return n==28&&!memcmp(p,"PMCP",4)&&p[4]==1&&p[5]==QP_HELLO&&qp_u16(p+6)==20&&qp_u16(p+8)==1&&
-        (qp_u32(p+20)&QP_CAP_CONTROL)&&(!launched||qp_u16(p+10)>=0x0207);
+        (qp_u32(p+20)&QP_CAP_CONTROL)&&(!launched||qp_u16(p+10)>=QP_BUNDLED_HELPER_VERSION);
 }
 #endif
