@@ -132,28 +132,23 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-sidestore:
-    name: Publish verified version to SideStore on main
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+stage-release:
+    name: Reverify and stage publishable SideStore bundle
     needs: [ps5-helper, ios-ipa]
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-      - name: Download exact verified IPA
+      - name: Download candidate IPA from this workflow
         uses: actions/download-artifact@v4
         with:
           name: ps5-pad-unsigned-ipa
           path: dist
-      - name: Download matching ELF
+      - name: Download matching ELF from this workflow
         uses: actions/download-artifact@v4
         with:
           name: ps5-pad-helper
           path: service/prebuilt
-      - name: Reverify, stage source.json and all matching release bytes
+      - name: Reverify byte identity and prepare a complete atomic release
         shell: bash
         run: |
           set -euo pipefail
@@ -162,22 +157,67 @@ jobs:
           report="dist/PS5-Pad-$version-verification.json"
           test -s "$ipa" && test -s "$report"
           python3 - "$ipa" "$report" <<'PY'
-          import hashlib, json, sys
+          import hashlib, json, sys, subprocess
           from pathlib import Path
-          import subprocess
           ipa,report=map(Path,sys.argv[1:])
           data=json.loads(report.read_text())
           matching=[p for p in Path('service/prebuilt').glob('padd-controller-*.elf')
                     if hashlib.sha256(p.read_bytes()).hexdigest()==data['service_sha256']]
-          assert len(matching)==1
+          assert len(matching)==1, 'Missing or ambiguous verified ELF'
           subprocess.run(['python3','app/verify_ipa.py',str(ipa),'--elf',str(matching[0])],check=True)
           assert hashlib.sha256(ipa.read_bytes()).hexdigest()==data['sha256']
-          print('Release IPA matches verified helper:', matching[0])
+          assert data['unsigned'] is True
+          print('Release IPA matches the verified helper:',matching[0])
           PY
           python3 tools/prepare_source.py --ipa "$ipa" --report "$report"
           python3 tools/prepare_source.py --ipa "$ipa" --report "$report" --check
-          # The exact ELF used in the IPA is kept with the release for future
-          # builds; the SideStore source, IPA and report form ONE git commit.
+          # The same staged bytes are used for PR dry runs and main publication.
+          mkdir -p "staged/releases/$version" staged/service/prebuilt
+          cp source.json staged/source.json
+          cp "releases/$version/PS5-Pad-$version-unsigned.ipa" "staged/releases/$version/"
+          cp "releases/$version/PS5-Pad-$version-verification.json" "staged/releases/$version/"
+          python3 - "$report" <<'PY'
+          import hashlib,json,shutil,sys
+          from pathlib import Path
+          report=json.loads(Path(sys.argv[1]).read_text())
+          matching=[p for p in Path('service/prebuilt').glob('padd-controller-*.elf')
+                    if hashlib.sha256(p.read_bytes()).hexdigest()==report['service_sha256']]
+          assert len(matching)==1
+          shutil.copy2(matching[0],Path('staged/service/prebuilt')/matching[0].name)
+          PY
+      - name: Upload release set verified in both PRs and main
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5-pad-sidestore-release-bundle
+          path: staged/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-sidestore:
+    name: Publish exact verified release bundle to SideStore
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: stage-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Download the staged bundle validated in this workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: ps5-pad-sidestore-release-bundle
+          path: .
+      - name: Validate and atomically commit IPA, report, ELF and source feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import plistlib; print(plistlib.load(open("app/Info.plist","rb"))["CFBundleShortVersionString"])')"
+          ipa="releases/$version/PS5-Pad-$version-unsigned.ipa"
+          report="releases/$version/PS5-Pad-$version-verification.json"
+          test -s "$ipa" && test -s "$report"
+          python3 tools/prepare_source.py --ipa "$ipa" --report "$report" --check
           git add -- source.json "releases/$version" service/prebuilt/padd-controller-*.elf
           if git diff --cached --quiet; then
             echo 'No new release bytes: published version already matches.'
@@ -186,7 +226,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Publish verified PS5 Pad $version for SideStore [skip ci]"
-          # No force push, and no publish if the version already exists with
-          # different bytes: prepare_source.py raises on that mismatch.
+          # Never force-push or overwrite an existing version with new bytes.
           git push origin HEAD:main
           echo "Published SideStore IPA and source.json in a single commit."
