@@ -8,11 +8,18 @@ Build with the PS5 Payload SDK and link libSceSystemService. The fixed output
 path is /data/ps5pad-app-detection-20261116.jsonl; change to a fresh path before
 an explicitly requested repeat so prior results remain intact.
 
-Live result on firmware 13.60: LncUtil initialization succeeded, but both running
-app calls returned -1 in all three samples. No title lookup was attempted without
-a valid app id. The visible TV app at sampling is awaiting owner confirmation.
-This is not proof that detection cannot work, nor proof that these functions
-identify the truly focused app while Home/system UI overlays are visible.
+Live results on firmware 13.60:
+- Initial sample: LncUtil initialization succeeded; both running-app calls
+  returned -1 three times. The owner selected "PS5 Home or another app", so
+  that initial screen context is not precise enough to validate Home behavior.
+- Repeat with the owner confirming Kodi open: both APIs returned app id 40984
+  in all three samples; GetAppTitleId succeeded and returned PPSA99420 each time.
+  No app launch, switch, controller or input operations were sent.
+
+Kodi running-title detection is now verified on this console. VLC and transitions
+between the app, Home and system overlays remain unverified. A running title is
+not yet proven to be the truly focused input target in every overlay state.
+The test result does not yet enable automatic control profiles in the iOS app.
 
 Plan for production, after verifying actual title IDs and focus transitions:
 - Report app id/title id plus explicit known/unknown status through the helper.
