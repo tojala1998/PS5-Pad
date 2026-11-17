@@ -25,7 +25,8 @@ removal retains the handle for retry and cannot create a duplicate controller.
 This depends on the console log server and event format. It is not a universal
 PS5 ownership API. Local tests cover the parser, real socket handoff, other
 profiles/devices, monitor loss, picker filtering and no automatic recreation.
-Physical-controller takeover still needs live confirmation after deployment.
+The owner installed 0.4.7 and confirmed physical-controller takeover works.
+USB inspection independently verified standalone version 0.4.7, build 13.
 
 Manual keyboard
 The three-dot menu includes Keyboard. Open a PS5 text field first, enter text on
