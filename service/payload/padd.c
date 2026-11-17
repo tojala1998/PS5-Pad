@@ -31,7 +31,7 @@
 #include "text_input.h"
 #include "live_keyboard.h"
 
-#define PADD_VERSION 0x0207
+#define PADD_VERSION 0x0208
 #define PAD_DETACH_SETTLE_MS 180u
 #define PAD_NEUTRAL_WARMUP_MS 200u
 

@@ -137,7 +137,7 @@ struct qp_app_state { uint32_t token; int32_t status; uint32_t flags; int32_t fo
 #define QP_APP_FOCUS_KNOWN 4u
 #define QP_APP_KODI_FOCUSED 8u
 #define QP_FLAG_APP_STATE 0x2000000
-#define QP_FLAG_POWER_OFF 0x4000000
+#define QP_FLAG_POWER_OFF 0x4000000 /* Full-off corrected in helper 2.8; 2.7 also advertised this flag but entered Rest Mode. */
 
 
 #define PMCP_FLAG_PAD_READY       0x1

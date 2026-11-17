@@ -1,0 +1,28 @@
+PS5 Pad 0.4.14 (build 20) - SOURCE CANDIDATE, NOT YET RELEASED
+
+Purpose: Change Power Off from the ShellCore request that entered Rest Mode on
+this PS5 to the SystemStateMgr full power-off service.
+
+- PS5 helper version 2.8 uses sceSystemStateMgrTurnOff(void), with no ShellCore
+  or raw reboot fallback. Source references: PS5 Home Assistant power.c and
+  OpenOrbis SystemService.h (no-argument signature); PS5-Suite tries TurnOff
+  first but calls it with an unused zero argument.
+- The app requires helper 2.8+ AND the QP_CAP_POWER_OFF capability.
+- The app continues using existing helper 2.7 for ordinary controller operations,
+  but Power Off remains disabled; it never stops or upgrades helpers automatically.
+- The build must not package the 2.7 ELF as a new 2.8 release.
+
+Manual helper upgrade, only when user decides:
+1. Build and verify service/prebuilt/padd-controller-2.8.elf with PS5 SDK 0.43.
+2. Build and verify the matching 0.4.14 unsigned IPA with iOS SDK.
+3. Publish source.json, IPA and verification report together on main only after
+   artifact verification. Never publish a source feed pointing to missing IPA bytes.
+4. Update through SideStore. If helper 2.7 is still running, use the *separate*
+   PMCP service-exit command 6, with user's explicit consent, when no other
+   session needs the virtual controller. It stops only our helper, not the PS5.
+   Reopen the app to start bundled helper 2.8. Never silently stop Kodi.
+5. Separately obtain informed user permission for one physical full-power-off test.
+   Successful API status does not prove physical shutdown. A full shutdown ends
+   the jailbreak and requires physical power-on and re-jailbreaking.
+
+No console shutdown or helper replacement has been performed in this branch.
