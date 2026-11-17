@@ -38,6 +38,8 @@ ownership, initialization, protocol, input, lifecycle and discovery checks pass.
 The unsigned ARM64 app was built and its USB copy verified. Service 2.5 was loaded
 and its live-keyboard capability and ownership-monitor connection verified in
 standby, without controller initialization, typing or media-app launch.
-Typing in the actual TV field and the final phone menu still need owner testing.
+The owner confirmed text appears live on the TV and Close disconnects the
+keyboard. USB independently verified standalone version 0.4.9, build 15.
+Enter submission and the final phone menu still need owner confirmation.
 
 No device settings, Home Screen layout or signing credentials were changed.

@@ -4,7 +4,8 @@ Investigated on November 16, 2026. Version 0.4.9 includes a manual live keyboard
 editor through the three-dot menu and service 2.5. Automatic keyboard-open/close
 detection remains unverified. The isolated backend test succeeded on firmware
 13.60, but the owner reported no text from the integrated 0.4.7 batch sender.
-The 0.4.9 persistent editor has passed host tests and awaits TV confirmation.
+The owner confirmed the 0.4.9 persistent editor types live on the TV and Close
+disconnects it. USB verified standalone build 15. Enter remains unconfirmed.
 See [0.4.9 notes](PS5-Pad-0.4.9-notes.txt). The contextual-detection design below
 remains a proposal, not shipped behavior.
 

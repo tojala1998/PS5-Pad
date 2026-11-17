@@ -40,7 +40,7 @@ A small green bar pulses during connection/initialization, flashes when profile 
 
 **••• → Keyboard…** opens a live keyboard editor in 0.4.9. Open the target field on the TV first. The keyboard connects once; typing and backspace are sent as you edit. **Enter** submits and disconnects; **Close** stops queued typing and disconnects without submitting. The editor shows this session's local text, not text read from the console. It supports up to 128 printable US-ASCII characters on a US layout. A dedicated short lease removes the keyboard on lost editor connectivity even if ordinary controller pings continue. Text is not logged or saved.
 
-The isolated keyboard experiment typed correctly in Kodi on firmware 13.60, but the owner reported that 0.4.7's batch sender did not type hello. The new live editor passes host tests and awaits TV confirmation. Automatic keyboard-popup detection remains unverified. See [research](docs/keyboard-research.md) and [0.4.9 notes](docs/PS5-Pad-0.4.9-notes.txt).
+The isolated keyboard experiment typed correctly in Kodi on firmware 13.60, but the owner reported that 0.4.7's batch sender did not type hello. The owner confirmed 0.4.9 types live on the TV and Close disconnects; USB independently verified build 15. Enter submission remains unconfirmed. Automatic keyboard-popup detection remains unverified. See [research](docs/keyboard-research.md) and [0.4.9 notes](docs/PS5-Pad-0.4.9-notes.txt).
 
 ## Sleep and controller sessions
 
