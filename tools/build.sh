@@ -47,8 +47,14 @@ cp Info.plist "$APP/Info.plist"
 HELPER_VERSION="$(python3 - "$ROOT/service/payload/padd.c" <<'PY'
 import re, sys
 from pathlib import Path
-text=Path(sys.argv[1]).read_text()
-found=re.search(r'^#define PADD_VERSION\s+0x([0-9a-fA-F]+)\s*
+source=Path(sys.argv[1]).read_text()
+found=re.search(r'PADD_VERSION\s+0x([0-9A-Fa-f]+)',source)
+if not found: raise SystemExit('Cannot identify PS5 helper version')
+number=int(found.group(1),16)
+print(f'{number >> 8}.{number & 255}')
+PY
+)"
+ELF="$ROOT/service/prebuilt/padd-controller-$HELPER_VERSION.elf"
 test -f "$ELF" || { echo "Missing verified helper 2.8 ELF; do not package helper 2.7." >&2; exit 1; }
 cp "$ELF" "$APP/padd-controller.elf"
 VERSION="$(python3 -c 'import plistlib; print(plistlib.load(open("Info.plist","rb"))["CFBundleShortVersionString"])')"
