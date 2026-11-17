@@ -1,0 +1,5 @@
+Rebuilt from the 0.4.13 controller baseline with its original Linux LLVM 18 / iPhoneOS 16.5 SDK toolchain. Controller ownership, initialization, reconnect, keyboard and media behavior are unchanged in source; the bundled controller helper 2.7 is byte-identical to 0.4.13.
+
+Power Off uses a separate, confirmed full-shutdown payload calling sceSystemStateMgrTurnOff(), without invoking the old Rest Mode request or requiring profile assignment. The PS5 ELF loader on port 9021 must be available.
+
+Local build, protocol, ownership and archive checks passed. Full shutdown and the reported profile-selection issue are not yet verified on the device. This narrowly scoped release does not claim to fix the ownership issue.

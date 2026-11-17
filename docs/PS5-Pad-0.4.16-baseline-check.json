@@ -1,0 +1,24 @@
+{
+  "baseline_commit": "1a9d44f2df606093c3a65de692f850111b27fff7",
+  "main_changes_confined_to_power": true,
+  "controller_lock_passed": true,
+  "macho_build_targets": {
+    "0.4.13": {
+      "platform": 2,
+      "minimum": 983040,
+      "sdk": 1049856
+    },
+    "0.4.15": {
+      "platform": 2,
+      "minimum": 983040,
+      "sdk": 1180928
+    },
+    "0.4.16": {
+      "platform": 2,
+      "minimum": 983040,
+      "sdk": 1049856
+    }
+  },
+  "console_power_test_performed": false,
+  "profile_regression_fixed": false
+}

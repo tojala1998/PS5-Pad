@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.16",
+          "buildVersion": "22",
+          "date": "2026-11-17",
+          "localizedDescription": "Rebuilt from the 0.4.13 controller baseline with its original Linux LLVM 18 / iPhoneOS 16.5 SDK toolchain. Controller ownership, initialization, reconnect, keyboard and media behavior are unchanged in source; the bundled controller helper 2.7 is byte-identical to 0.4.13.\n\nPower Off uses a separate, confirmed full-shutdown payload calling sceSystemStateMgrTurnOff(), without invoking the old Rest Mode request or requiring profile assignment. The PS5 ELF loader on port 9021 must be available.\n\nLocal build, protocol, ownership and archive checks passed. Full shutdown and the reported profile-selection issue are not yet verified on the device. This narrowly scoped release does not claim to fix the ownership issue.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.16/PS5-Pad-0.4.16-unsigned.ipa",
+          "size": 177963,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.15",
           "buildVersion": "21",
           "date": "2026-11-17",
@@ -82,11 +91,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.15",
+      "version": "0.4.16",
       "versionDate": "2026-11-17",
-      "versionDescription": "PS5 Pad 0.4.15 (build 21) — 0.4.13 controller baseline, independent Power Off\n\nRestores the 0.4.13 controller, keyboard, discovery and initialization source.\nBundles the exact original helper 2.7 from 0.4.13, verified by SHA-256; it is\nnot rebuilt or silently replaced while running.\n\nPower Off is now a separate, explicitly confirmed one-shot request through the\nPS5 ELF loader on port 9021. It calls sceSystemStateMgrTurnOff and does not\nrequire a profile selection, controller initialization, a helper version check,\nor successful controller ownership detection. It never sends the old helper's\nRest Mode-producing command, and never automatically retries an uncertain send.\nThe result is shown independently of the controller/profile status message.\n\nThe ELF loader must be running. A transfer acknowledgment is not proof of a\nphysical shutdown. Full shutdown behavior still needs an on-console test.\nA full shutdown closes running apps and ends the jailbreak; power on and run\nthe jailbreak again before reconnecting. Existing running helpers are left alone.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.15/PS5-Pad-0.4.15-unsigned.ipa",
-      "size": 170813
+      "versionDescription": "Rebuilt from the 0.4.13 controller baseline with its original Linux LLVM 18 / iPhoneOS 16.5 SDK toolchain. Controller ownership, initialization, reconnect, keyboard and media behavior are unchanged in source; the bundled controller helper 2.7 is byte-identical to 0.4.13.\n\nPower Off uses a separate, confirmed full-shutdown payload calling sceSystemStateMgrTurnOff(), without invoking the old Rest Mode request or requiring profile assignment. The PS5 ELF loader on port 9021 must be available.\n\nLocal build, protocol, ownership and archive checks passed. Full shutdown and the reported profile-selection issue are not yet verified on the device. This narrowly scoped release does not claim to fix the ownership issue.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.16/PS5-Pad-0.4.16-unsigned.ipa",
+      "size": 177963
     }
   ],
   "news": []
