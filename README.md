@@ -2,13 +2,15 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.10 IPA](releases/0.4.10/PS5-Pad-0.4.10-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.10-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.6.elf)
+[Download the unsigned 0.4.11 IPA](releases/0.4.11/PS5-Pad-0.4.11-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.11-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.7.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
 ## Current build
 
-Version 0.4.10 silently activates Kodi's media profile only when a fresh console check confirms Kodi has input focus. Home, other apps, stale/unknown state and disconnection disable the media buttons. The Kodi shortcut animates away while Kodi is running (even behind Home), and returns when it is closed. Reconnection checks state again before enabling controls or changing the icon. Helper 2.6's running/focus distinction is verified on firmware 13.60 with Kodi and PS5 Home; the phone's new animations await owner confirmation. VLC is no longer part of the interface.
+Version 0.4.11 adds **Power Off PS5** at the bottom of the three-dot menu, with a separate confirmation. Helper 2.7 uses the console ShellCore shutdown request. Host command tests pass; actual shutdown awaits owner testing.
+
+Version 0.4.10 silently activates Kodi's media profile only when a fresh console check confirms Kodi has input focus. Home, other apps, stale/unknown state and disconnection disable the media buttons. The Kodi shortcut animates away while Kodi is running (even behind Home), and returns when it is closed. Reconnection checks state again before enabling controls or changing the icon. Helper 2.6's running/focus distinction is verified on firmware 13.60 with Kodi and PS5 Home; the owner confirmed Home disables media, Kodi enables media, and closing Kodi restores its icon. VLC is no longer part of the interface.
 
 Version 0.4.9 includes the 0.4.8 change that simplifies the three-dot menu to one controller action: **Initialize Controller** when disconnected, or **Disconnect Controller** when connected. Separate network Connect / Close actions are removed. Service 2.5 adds a temporary live keyboard session.
 
@@ -133,7 +135,7 @@ Use SideStore separately to sign and update the app. The display name is PS5 Pad
 
 ## Console service
 
-Upload `service/prebuilt/padd-controller-2.6.elf` to Payload Manager and load it if it is not already running. It requires the existing TCP 3232 log server for ownership monitoring, listens on TCP 9305, starts in standby and creates its controller only after an explicit Initialize request. It assumes the console is already jailbroken; neither the iPhone app nor the service performs a jailbreak.
+Upload `service/prebuilt/padd-controller-2.7.elf` to Payload Manager and load it if it is not already running. It requires the existing TCP 3232 log server for ownership monitoring, listens on TCP 9305, starts in standby and creates its controller only after an explicit Initialize request. It assumes the console is already jailbroken; neither the iPhone app nor the service performs a jailbreak.
 
 The source and its original license are under `service/`. Build with [PS5 Payload SDK v0.43](https://github.com/ps5-payload-dev/sdk/releases/tag/v0.43):
 

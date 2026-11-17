@@ -23,6 +23,7 @@ int system_kodi_installed(void);
 int system_launch_kodi(void);
 
 void system_app_state(struct qp_app_state *state);
+int system_power_off(void);
 void system_shutdown(void);
 
 #endif

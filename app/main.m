@@ -380,6 +380,7 @@ static void Round(UIView *view,CGFloat radius) {
             }
             self.result.text=self.link.message;
         }
+        else if([action isEqual:@"power_off"]) self.result.text=self.link.message;
         else if([action isEqual:@"keyboard"]) self.result.text=self.link.message;
         else if(status) self.result.text=[NSString stringWithFormat:@"%@ failed (0x%08X)",action,(unsigned)status];
         else self.result.text=[NSString stringWithFormat:@"%@ launch requested",action];
@@ -691,6 +692,17 @@ static void Round(UIView *view,CGFloat radius) {
     navigation.modalPresentationStyle=UIModalPresentationFullScreen;
     [self presentViewController:navigation animated:YES completion:nil];
 }
+- (void)confirmPowerOff {
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Power Off PS5?" message:@"This closes running apps and fully shuts down the console. You will need to turn it on and run the jailbreak again before reconnecting." preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Power Off" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+        (void)a;if(!self.link.ready||!self.link.supportsPowerOff||self.link.controlBusy||self.link.keyboardActive)return;
+        [self cancelEnsureSession];qp_initialization_cancel(&self->_initialization);
+        self.wantsConnection=NO;self.needsInitializePrompt=NO;self.autoInitializeAttempted=YES;
+        [self clearControls];self.result.text=@"Requesting power off…";[self.link powerOff];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
 - (void)showConnection {
     [self clearControls];
     NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.message?:@""];
@@ -717,6 +729,11 @@ static void Round(UIView *view,CGFloat radius) {
     [sheet addAction:[UIAlertAction actionWithTitle:@"Find / Add PS5" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
     }]];
+    UIAlertAction *power=[UIAlertAction actionWithTitle:@"Power Off PS5" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+        (void)a;[self dismissViewControllerAnimated:YES completion:^{[self confirmPowerOff];}];
+    }];
+    power.enabled=_link.ready&&_link.supportsPowerOff&&!_link.controlBusy&&!_link.keyboardActive&&!_link.disconnectingController;
+    [sheet addAction:power];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
 }

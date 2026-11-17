@@ -39,6 +39,7 @@
 }
 @property(nonatomic,readwrite) BOOL supportsLiveKeyboard,keyboardConnected,keyboardActive,keyboardClosing;
 @property(nonatomic,readwrite,copy) NSString *keyboardMessage;
+@property(nonatomic,readwrite) BOOL supportsPowerOff;
 @property(nonatomic,readwrite) BOOL supportsAppState,kodiRunningKnown,kodiRunning,kodiFocused;
 @property(nonatomic,readwrite,copy) NSString *focusedTitle;
 @property(nonatomic,readwrite) BOOL ready;
@@ -89,6 +90,7 @@
     if (_changed) _changed();
 }
 - (void)readOwnershipFlags:(uint32_t)flags {
+    _supportsPowerOff=(flags&QP_CAP_POWER_OFF)!=0;
     _supportsAppState=(flags&QP_CAP_APP_STATE)!=0;
     _supportsTextInput=(flags&QP_CAP_TEXT_INPUT)!=0;
     _supportsLiveKeyboard=(flags&QP_CAP_LIVE_KEYBOARD)!=0;
@@ -111,7 +113,7 @@
     nw_connection_t old=_connection;
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
-    _controlPayload=nil; _supportsTextInput=NO;
+    _controlPayload=nil; _supportsTextInput=NO; _supportsPowerOff=NO;
     _supportsAppState=_kodiRunningKnown=_kodiRunning=_kodiFocused=_appStateWaiting=NO;
     _appStateRequestAt=_appStateUpdated=0;_focusedTitle=nil;
     _supportsLiveKeyboard=_keyboardConnected=_keyboardActive=_keyboardClosing=NO;
@@ -146,6 +148,7 @@
     return deadline && !_connectBlocked && path && nw_path_get_status(path)==nw_path_status_satisfied;
 }
 - (void)failConnection:(NSString *)reason unavailable:(BOOL)unavailable {
+    if(_controlType==QP_POWER_OFF) {reason=@"Power-off result unknown. Check the TV; request was not retried.";unavailable=NO;}
     [self disconnect:reason];
     _failureKind=unavailable?QPConnectionFailureUnavailable:QPConnectionFailureOther;
     [self publish];
@@ -409,6 +412,14 @@
                 if(status && _completed) _completed(@"check",status);
             }
             [self tryDisconnectController]; [self flush]; [self publish];
+        } else if(kind==QP_POWER_OFF && length==4 && _ready) {
+            if(!_controlSent||_controlType!=kind){[self failConnection:@"Unexpected power response." unavailable:NO];return;}
+            int32_t status=(int32_t)qp_u32(p);
+            _controlBusy=NO;_controlType=0;_controlSent=NO;_controlPayload=nil;
+            _lastAction=@"power_off";_lastActionStatus=status;
+            _message=status?[NSString stringWithFormat:@"Power off failed (0x%08X).",(unsigned)status]:@"Power off requested.";
+            if(_completed)_completed(@"power_off",status);
+            [self disconnect:_message];return;
         } else if((kind==QP_VLC || kind==QP_KODI) && length==4 && _ready) {
             if(!_controlSent || _controlType!=kind) { [self failConnection:@"Unexpected media response." unavailable:NO]; return; }
             _controlBusy=NO; _controlType=0; _controlSent=NO; _lastPong=[self now]; _sentAt=_lastPong;
@@ -425,7 +436,12 @@
     _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _controlBusy=YES; _controlType=kind; _controlSent=NO; _controlStarted=[self now];
     _message=kind==QP_LIVE_KEYBOARD?@"Keyboard session active":(kind==QP_TYPE_TEXT?@"Typing…":(kind==QP_DISCONNECT_CONTROLLER?@"Disconnecting controller…":(kind==QP_INITIALIZE?@"Turning on controller…":(kind==QP_STATUS?@"Checking controller…":(kind==QP_KODI?@"Opening Kodi…":@"Opening VLC…")))));
+    if(kind==QP_POWER_OFF)_message=@"Requesting power off…";
     [self flush]; [self publish];
+}
+- (void)powerOff {
+    if(!_ready||!_supportsPowerOff||_controlBusy||_keyboardActive)return;
+    _controlPayload=[NSData dataWithBytes:"OFF!" length:4];[self control:QP_POWER_OFF];
 }
 - (BOOL)disconnectingController { return _disconnectRequested || _controlType==QP_DISCONNECT_CONTROLLER; }
 - (void)tryDisconnectController {

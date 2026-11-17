@@ -123,6 +123,11 @@ int pad_remove(int32_t handle) {
     return result;
 }
 
+int system_power_off(void) {
+    emit("{\"call\":\"power_off\"}\n");
+    return (int)fault_value("PADD_TEST_POWER_OFF_ERROR",0);
+}
+
 void system_shutdown(void) {
     emit("{\"call\":\"shutdown\"}\n");
     if (trace) fclose(trace);

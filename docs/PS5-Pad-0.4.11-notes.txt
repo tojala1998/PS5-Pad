@@ -1,0 +1,25 @@
+PS5 Pad 0.4.11 (build 17), helper 2.7
+
+Power Off PS5 is the bottom action in the three-dot connection menu.
+It requires a connected helper 2.7 and a separate Power Off confirmation.
+Cancel sends nothing. Busy or unsupported services disable the action.
+This fully shuts down the PS5, closes running apps, and ends the jailbreak.
+It does not enter Rest Mode or provide power-on from a fully shut-down console.
+
+The helper calls sceShellCoreUtilRequestShutdown(2), the ShellCore request
+used by StonedModder's SystemStateManager. There is no forced reboot syscall
+or fallback with different semantics. API reference:
+https://github.com/StonedModder/PS5-SystemStateManager/tree/414b905e285ec75ba91e48b7f908bbd6ea487ac9
+
+The request is capability-gated, uses its own command and exact confirmation
+payload, reports system errors and rejects duplicate successful requests.
+The payload is an accident guard, not authentication; use a trusted LAN.
+The app stops automatic reconnection on confirmation. An interrupted response
+is reported as unknown; it never retries the power-off request automatically.
+Service exit/update command 6 remains separate and never powers off the console.
+
+Host tests cover confirmation, errors, duplicates, reconnect and service exit.
+Actual console shutdown is deliberately left for the owner to test when ready.
+
+Owner confirmed 0.4.10: media controls grey on Home, work in Kodi, and Kodi's
+shortcut returns when Kodi closes. Existing behavior is preserved.

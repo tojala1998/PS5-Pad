@@ -46,5 +46,7 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 - (void)typeText:(NSString *)text;
 - (void)launchVLC;
 - (void)launchKodi;
+@property(nonatomic,readonly) BOOL supportsPowerOff;
+- (void)powerOff;
 - (void)loadServiceAt:(NSString *)host;
 @end

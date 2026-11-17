@@ -34,7 +34,7 @@ ld64.lld-18 -arch arm64 -platform_version ios 15.0 16.5 -syslibroot "$SDK" \
   -lSystem -lobjc -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework Network \
   -headerpad 0x4000 -no_adhoc_codesign
 cp Info.plist "$APP/Info.plist"
-ELF="$ROOT/service/prebuilt/padd-controller-2.6.elf"
+ELF="$ROOT/service/prebuilt/padd-controller-2.7.elf"
 cp "$ELF" "$APP/padd-controller.elf"
 VERSION="$(python3 -c 'import plistlib; print(plistlib.load(open("Info.plist","rb"))["CFBundleShortVersionString"])')"
 OUTPUT="$ROOT/dist/PS5-Pad-$VERSION-unsigned.ipa"

@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.11",
+          "buildVersion": "17",
+          "date": "2026-11-16",
+          "localizedDescription": "PS5 Pad 0.4.11 (build 17), helper 2.7\n\nPower Off PS5 is the bottom action in the three-dot connection menu.\nIt requires a connected helper 2.7 and a separate Power Off confirmation.\nCancel sends nothing. Busy or unsupported services disable the action.\nThis fully shuts down the PS5, closes running apps, and ends the jailbreak.\nIt does not enter Rest Mode or provide power-on from a fully shut-down console.\n\nThe helper calls sceShellCoreUtilRequestShutdown(2), the ShellCore request\nused by StonedModder's SystemStateManager. There is no forced reboot syscall\nor fallback with different semantics. API reference:\nhttps://github.com/StonedModder/PS5-SystemStateManager/tree/414b905e285ec75ba91e48b7f908bbd6ea487ac9\n\nThe request is capability-gated, uses its own command and exact confirmation\npayload, reports system errors and rejects duplicate successful requests.\nThe payload is an accident guard, not authentication; use a trusted LAN.\nThe app stops automatic reconnection on confirmation. An interrupted response\nis reported as unknown; it never retries the power-off request automatically.\nService exit/update command 6 remains separate and never powers off the console.\n\nHost tests cover confirmation, errors, duplicates, reconnect and service exit.\nActual console shutdown is deliberately left for the owner to test when ready.\n\nOwner confirmed 0.4.10: media controls grey on Home, work in Kodi, and Kodi's\nshortcut returns when Kodi closes. Existing behavior is preserved.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.11/PS5-Pad-0.4.11-unsigned.ipa",
+          "size": 140730,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.10",
           "buildVersion": "16",
           "date": "2026-11-16",
@@ -37,11 +46,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.10",
+      "version": "0.4.11",
       "versionDate": "2026-11-16",
-      "versionDescription": "PS5 Pad 0.4.10 (build 16), helper 2.6\n\nSilent Kodi media profile\nThe helper now reports whether Kodi is running separately from the app with\ninput focus. PS5 Pad checks immediately on connect and every 750 ms afterward.\nMedia controls enable only with fresh, confirmed Kodi focus and an initialized\ncontroller assigned to a profile. Home, other apps, unknown/stale state and\nconnection loss disable and grey out the media buttons. No profile-change popup\nis shown. Kodi retains the established chapter, seek and Play/Pause mappings.\nVLC is no longer part of the interface; no other media mappings are guessed.\n\nKodi shortcut\nThe Kodi icon fades/shrinks away when Kodi is confirmed running, including when\nHome has focus over it. It pops back when Kodi is confirmed no longer running.\nUnknown/offline state does not invent a launch/exit animation; the last icon\npresentation is retained, disabled. A cold launch keeps it hidden until the first\nvalid state arrives. Reconnecting always rechecks current state before enabling\nmedia or the shortcut, then animates any change that happened while disconnected.\nAnimations use generation checks so rapid changes cannot leave the icon hidden\nby an old completion handler. The icon remains in its own fixed layout slot.\n\nVerification\nRead-only probes on firmware 13.60 identified Kodi as PPSA99420. With the owner\nconfirming PS5 Home while Kodi remained running, the running Kodi id stayed the\nsame while the focused title changed to NPXS40087. Both states are distinct.\nThe new app/service integration and icon animations await on-phone confirmation.\nNo apps were launched, closed or switched by the detection tests, and no\ncontroller input or ownership changes were used to detect application state.\n\nTechnical notes\nAPP_STATE is a capability-gated read-only request with a matching token and\nseparate known/running/focus flags. Missing replies invalidate state; delayed\nresponses to earlier requests and earlier network generations cannot restore it.\nThe PS5 APIs are read-only GetAppId / GetAppFocusedAppStatus / GetAppTitleId.\nThe focused status uses its first 32 bits as app id on 13.60; a generously sized\nbuffer accommodates the larger native response. Query errors fail closed.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.10/PS5-Pad-0.4.10-unsigned.ipa",
-      "size": 139357
+      "versionDescription": "PS5 Pad 0.4.11 (build 17), helper 2.7\n\nPower Off PS5 is the bottom action in the three-dot connection menu.\nIt requires a connected helper 2.7 and a separate Power Off confirmation.\nCancel sends nothing. Busy or unsupported services disable the action.\nThis fully shuts down the PS5, closes running apps, and ends the jailbreak.\nIt does not enter Rest Mode or provide power-on from a fully shut-down console.\n\nThe helper calls sceShellCoreUtilRequestShutdown(2), the ShellCore request\nused by StonedModder's SystemStateManager. There is no forced reboot syscall\nor fallback with different semantics. API reference:\nhttps://github.com/StonedModder/PS5-SystemStateManager/tree/414b905e285ec75ba91e48b7f908bbd6ea487ac9\n\nThe request is capability-gated, uses its own command and exact confirmation\npayload, reports system errors and rejects duplicate successful requests.\nThe payload is an accident guard, not authentication; use a trusted LAN.\nThe app stops automatic reconnection on confirmation. An interrupted response\nis reported as unknown; it never retries the power-off request automatically.\nService exit/update command 6 remains separate and never powers off the console.\n\nHost tests cover confirmation, errors, duplicates, reconnect and service exit.\nActual console shutdown is deliberately left for the owner to test when ready.\n\nOwner confirmed 0.4.10: media controls grey on Home, work in Kodi, and Kodi's\nshortcut returns when Kodi closes. Existing behavior is preserved.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.11/PS5-Pad-0.4.11-unsigned.ipa",
+      "size": 140730
     }
   ],
   "news": []
