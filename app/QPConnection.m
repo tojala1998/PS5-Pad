@@ -306,7 +306,7 @@
             }
             /* Check before publishing ready or sending input/initialization.
              * The loader rechecks its own greeting before touching the helper. */
-            if(qp_helper_outdated(qp_u16(p+2))) {
+            if(qp_helper_needs_replacement(qp_u16(p+2))) {
                 if(!qp_helper_can_update(qp_u16(p+2),qp_u32(p+12))) {
                     [self failConnection:@"This helper is too old for a safe automatic update. Restart it with the bundled ELF." unavailable:NO]; return;
                 }

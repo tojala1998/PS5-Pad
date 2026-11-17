@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.18",
+          "buildVersion": "24",
+          "date": "2026-11-17",
+          "localizedDescription": "The app now uses its exact bundled helper version. A different running version is a replacement candidate whether it is older or newer; newer helpers are no longer assumed compatible. An exact match preserves the existing session.\n\nReplacement still requires the existing management protocol, confirmed release of PS5 Pad's virtual controller, acknowledged helper shutdown, clean connection closure and a refused service connection before loading. The newly loaded helper must report exactly the bundled version. Ambiguous failures stop the replacement instead of launching another helper.\n\nBundles the unchanged helper 2.7. Replacing a different helper ends its virtual-controller session and may require normal profile selection afterward. Full Power Off is unchanged. Built and tested locally with the original LLVM 18 / iPhoneOS 16.5 SDK toolchain; phone-driven replacement remains unverified.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.18/PS5-Pad-0.4.18-unsigned.ipa",
+          "size": 179769,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.17",
           "buildVersion": "23",
           "date": "2026-11-17",
@@ -100,11 +109,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.17",
+      "version": "0.4.18",
       "versionDate": "2026-11-17",
-      "versionDescription": "Automatically checks the running PS5 helper before enabling controls on every connection. If it is older than the bundled helper, PS5 Pad confirms release of its own virtual controller, requests a clean helper stop, waits for acknowledged shutdown, connection closure and a refused service connection, then loads and verifies the replacement. Current and newer helpers are reused without restarting their controller session.\n\nFailed removal, ambiguous shutdown, blocked network access, an invalid greeting or a stale replacement stops the update instead of sending another helper. Very old helpers without acknowledged controller removal require a manual restart. An ELF loader or Payload Manager must be available to start the replacement. Updating an older helper ends its virtual-controller session; normal initialization/profile selection may follow.\n\nThis release still bundles the unchanged controller helper 2.7. A running 2.7 or newer helper is deliberately not restarted. Full Power Off remains separate and was user-confirmed in 0.4.16. Built with the original LLVM 18 / iPhoneOS 16.5 SDK toolchain. Local policy, host-daemon socket and archive checks passed; the automatic replacement flow still needs verification from the iPhone.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.17/PS5-Pad-0.4.17-unsigned.ipa",
-      "size": 179768
+      "versionDescription": "The app now uses its exact bundled helper version. A different running version is a replacement candidate whether it is older or newer; newer helpers are no longer assumed compatible. An exact match preserves the existing session.\n\nReplacement still requires the existing management protocol, confirmed release of PS5 Pad's virtual controller, acknowledged helper shutdown, clean connection closure and a refused service connection before loading. The newly loaded helper must report exactly the bundled version. Ambiguous failures stop the replacement instead of launching another helper.\n\nBundles the unchanged helper 2.7. Replacing a different helper ends its virtual-controller session and may require normal profile selection afterward. Full Power Off is unchanged. Built and tested locally with the original LLVM 18 / iPhoneOS 16.5 SDK toolchain; phone-driven replacement remains unverified.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.18/PS5-Pad-0.4.18-unsigned.ipa",
+      "size": 179769
     }
   ],
   "news": []

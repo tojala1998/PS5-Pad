@@ -121,7 +121,7 @@
             }
             [self->_hello replaceBytesInRange:NSMakeRange(0,8+size) withBytes:NULL length:0];
             if(self->_update==QP_UPDATE_STOP) {
-                [self say:@"Stopping outdated helper…"];[self sendUpdateCommand:6 socket:c];
+                [self say:@"Stopping mismatched helper…"];[self sendUpdateCommand:6 socket:c];
             }
         }
         if(error||complete) {
@@ -148,12 +148,12 @@
         (void)context;if(!self->_active||self->_socket!=c)return;
         if(content)dispatch_data_apply(content,^bool(dispatch_data_t region,size_t offset,const void *buffer,size_t size){(void)region;(void)offset;[self->_hello appendBytes:buffer length:size];return true;});
         if(self->_hello.length>=28){
-            if(!qp_loader_hello_valid(self->_hello.bytes,self->_hello.length,self->_launched)){[self finish:@"Unexpected or outdated helper response; startup was not confirmed."];return;}
+            if(!qp_loader_hello_valid(self->_hello.bytes,self->_hello.length,self->_launched)){[self finish:@"Unexpected or mismatched helper response; startup was not confirmed."];return;}
             const uint8_t *p=self->_hello.bytes;uint16_t version=qp_u16(p+10);uint32_t flags=qp_u32(p+20);
-            if(qp_helper_outdated(version)) {
+            if(qp_helper_needs_replacement(version)) {
                 if(self->_update==QP_UPDATE_ABSENCE){[self waitForOldListener:c];return;}
                 if(!qp_helper_can_update(version,flags)){[self finish:@"This helper cannot be safely updated automatically. No replacement was sent."];return;}
-                [self record:@"outdated_helper" state:version code:QP_BUNDLED_HELPER_VERSION];
+                [self record:@"mismatched_helper" state:version code:QP_BUNDLED_HELPER_VERSION];
                 [self beginUpdate:c];return;
             }
             self->_update=QP_UPDATE_NONE;

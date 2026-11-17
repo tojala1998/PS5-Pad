@@ -5,13 +5,13 @@
 #include "QPHelperVersion.h"
 typedef enum { QP_UPDATE_NONE, QP_UPDATE_DETACH, QP_UPDATE_STOP,
     QP_UPDATE_EOF, QP_UPDATE_ABSENCE, QP_UPDATE_FAILED } QPHelperUpdate;
-/* Never downgrade or restart a current helper. Older helpers must support
- * acknowledged removal of only their own virtual controller. */
-static inline bool qp_helper_outdated(uint16_t version) {
-    return version < QP_BUNDLED_HELPER_VERSION;
+/* Each app uses its tested, bundled helper. A different version is a
+ * replacement candidate in either direction, not an assumed-compatible peer. */
+static inline bool qp_helper_needs_replacement(uint16_t version) {
+    return version != QP_BUNDLED_HELPER_VERSION;
 }
 static inline bool qp_helper_can_update(uint16_t version,uint32_t flags) {
-    return qp_helper_outdated(version) && qp_supports_disconnect(version,flags);
+    return qp_helper_needs_replacement(version) && qp_supports_disconnect(version,flags);
 }
 static inline bool qp_helper_update_reply(QPHelperUpdate *phase,uint8_t kind,const uint8_t *body,size_t length) {
     if(*phase==QP_UPDATE_DETACH && kind==QP_DISCONNECT_CONTROLLER && length==32 && qp_disconnect_response_valid(body)) {

@@ -4,10 +4,10 @@
 #include <stdio.h>
 int main(void) {
     uint32_t flags=QP_CAP_CONTROL|QP_CAP_DISCONNECT_CONTROLLER;
-    assert(qp_helper_outdated(QP_BUNDLED_HELPER_VERSION-1));
+    assert(qp_helper_needs_replacement(QP_BUNDLED_HELPER_VERSION-1));
     assert(qp_helper_can_update(QP_BUNDLED_HELPER_VERSION-1,flags));
     assert(!qp_helper_can_update(QP_BUNDLED_HELPER_VERSION,flags));
-    assert(!qp_helper_can_update(QP_BUNDLED_HELPER_VERSION+1,flags));
+    assert(qp_helper_can_update(QP_BUNDLED_HELPER_VERSION+1,flags));
     assert(!qp_helper_can_update(0x0202,flags));
     assert(!qp_helper_can_update(0x0206,QP_CAP_CONTROL));
     QPHelperUpdate phase=QP_UPDATE_DETACH;
@@ -46,5 +46,8 @@ int main(void) {
     assert(!qp_loader_hello_valid(hello,28,true)); /* replaced service still outdated */
     hello[10]=QP_BUNDLED_HELPER_VERSION&255;hello[11]=QP_BUNDLED_HELPER_VERSION>>8;
     assert(qp_loader_hello_valid(hello,28,true));
+    hello[10]=(QP_BUNDLED_HELPER_VERSION+1)&255;hello[11]=(QP_BUNDLED_HELPER_VERSION+1)>>8;
+    assert(qp_loader_hello_valid(hello,28,false));
+    assert(!qp_loader_hello_valid(hello,28,true)); /* newer is also the wrong replacement */
     puts("PASS: old/current/new versions, confirmed detach-stop-EOF-refusal ordering, failures, and post-load version verification.");
 }
