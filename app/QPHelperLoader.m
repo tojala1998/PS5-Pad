@@ -10,6 +10,8 @@
     NSData *_image;
     NSMutableData *_hello;
     BOOL _active,_launched,_loaderConnected,_sendStarted,_usedManager;
+    BOOL _probeConnected,_probeBlocked;
+    NSMutableArray *_trace;
     unsigned _probes;
 }
 @end
@@ -20,16 +22,25 @@
 }
 - (void)finish:(NSString *)error {
     if(!_active)return;void(^done)(NSString *)=_completed;
+    [self record:error?:@"verified" state:0 code:0];
     [self cancel];if(done)done(error);
 }
-- (void)say:(NSString *)message {if(_active&&_progress)_progress(message);}
+- (void)record:(NSString *)event state:(int)state code:(int)code {
+    if(!_trace)_trace=[NSMutableArray new];
+    [_trace addObject:@{@"event":event,@"state":@(state),@"code":@(code),@"time":@(NSDate.date.timeIntervalSince1970)}];
+    if(_trace.count>48)[_trace removeObjectAtIndex:0];
+    NSString *file=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"PS5Pad-startup.json"];
+    NSDictionary *record=@{@"version":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"",@"events":_trace};
+    [[NSJSONSerialization dataWithJSONObject:record options:0 error:nil] writeToFile:file atomically:YES];
+}
+- (void)say:(NSString *)message {[self record:message state:0 code:0];if(_active&&_progress)_progress(message);}
 - (nw_connection_t)socketOnPort:(const char *)port {
     nw_connection_t c=nw_connection_create(nw_endpoint_create_host(_host.UTF8String,port),nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL,NW_PARAMETERS_DEFAULT_CONFIGURATION));
     nw_connection_set_queue(c,dispatch_get_main_queue());_socket=c;return c;
 }
 - (void)start:(NSString *)host image:(NSData *)image {
     [self cancel];_active=YES;_host=[host copy];_image=image;
-    _launched=_loaderConnected=_sendStarted=_usedManager=NO;_probes=0;
+    _launched=_loaderConnected=_sendStarted=_usedManager=NO;_probes=0;_trace=[NSMutableArray new];
     if(!qp_loader_image_valid(image.bytes,image.length)){[self finish:@"The bundled helper is not a valid PS5 ELF."];return;}
     NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;
     config.timeoutIntervalForRequest=6;config.timeoutIntervalForResource=10;config.HTTPShouldSetCookies=NO;
@@ -53,6 +64,7 @@
         dispatch_async(dispatch_get_main_queue(),^{
             if(!self->_active)return;
             NSInteger status=[response isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)response).statusCode:0;
+            [self record:[NSString stringWithFormat:@"Payload Manager %@",method] state:(int)status code:(int)error.code];
             NSString *failure=error?@"Payload Manager did not respond.":(status!=200?[NSString stringWithFormat:@"Payload Manager returned HTTP %ld.",(long)status]:(data.length>1024*1024?@"Payload Manager response was too large.":nil));
             done(data,failure);
         });
@@ -60,6 +72,7 @@
 }
 - (void)probeFailed:(nw_connection_t)c absent:(BOOL)absent {
     if(!_active||_socket!=c)return;nw_connection_cancel(c);_socket=nil;
+    [self record:absent?@"helper_absent":@"probe_did_not_confirm_absence" state:0 code:0];
     if(!_launched){if(absent)[self sendDirect];else [self finish:@"Controller service did not answer safely; no duplicate helper was sent."];return;}
     if(++_probes>=8){[self finish:@"Helper was sent but did not become ready. Check the PS5 before retrying."];return;}
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{if(self->_active)[self probe];});
@@ -79,15 +92,26 @@
         else [self readHello:c];
     });
 }
+- (BOOL)probeAbsent:(nw_connection_t)c error:(nw_error_t)error deadline:(BOOL)deadline {
+    nw_path_t path=nw_connection_copy_current_path(c);
+    if(path){nw_path_unsatisfied_reason_t why=nw_path_get_unsatisfied_reason(path);
+        if(why==nw_path_unsatisfied_reason_local_network_denied||why==nw_path_unsatisfied_reason_wifi_denied||why==nw_path_unsatisfied_reason_cellular_denied)_probeBlocked=YES;}
+    BOOL refused=error&&nw_error_get_error_domain(error)==nw_error_domain_posix&&nw_error_get_error_code(error)==ECONNREFUSED;
+    return qp_loader_service_absent(_probeConnected,_probeBlocked,path&&nw_path_get_status(path)==nw_path_status_satisfied,refused,deadline);
+}
 - (void)probe {
-    if(!_active)return;_hello=[NSMutableData new];nw_connection_t c=[self socketOnPort:"9305"];
+    if(!_active)return;_hello=[NSMutableData new];_probeConnected=_probeBlocked=NO;nw_connection_t c=[self socketOnPort:"9305"];
     nw_connection_set_state_changed_handler(c,^(nw_connection_state_t state,nw_error_t error){
         if(!self->_active||self->_socket!=c)return;
-        if(state==nw_connection_state_ready)[self readHello:c];
-        else if(state==nw_connection_state_failed)[self probeFailed:c absent:error&&nw_error_get_error_domain(error)==nw_error_domain_posix&&nw_error_get_error_code(error)==ECONNREFUSED];
+        int code=error?nw_error_get_error_code(error):0;[self record:@"helper_probe" state:state code:code];
+        if(state==nw_connection_state_ready){self->_probeConnected=YES;[self readHello:c];}
+        else if(state==nw_connection_state_waiting){
+            if(error&&!(nw_error_get_error_domain(error)==nw_error_domain_posix&&(code==ECONNREFUSED||code==ETIMEDOUT)))self->_probeBlocked=YES;
+            if([self probeAbsent:c error:error deadline:NO])[self probeFailed:c absent:YES];
+        }else if(state==nw_connection_state_failed)[self probeFailed:c absent:[self probeAbsent:c error:error deadline:NO]];
     });
     nw_connection_start(c);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self->_active&&self->_socket==c)[self probeFailed:c absent:NO];});
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self->_active&&self->_socket==c)[self probeFailed:c absent:[self probeAbsent:c error:nil deadline:YES]];});
 }
 - (void)directFailed:(nw_connection_t)c {
     if(!_active||_socket!=c)return;nw_connection_cancel(c);_socket=nil;
@@ -97,7 +121,9 @@
 - (void)sendDirect {
     [self say:@"Starting controller service…"];nw_connection_t c=[self socketOnPort:"9021"];
     nw_connection_set_state_changed_handler(c,^(nw_connection_state_t state,nw_error_t error){
-        (void)error;if(!self->_active||self->_socket!=c)return;
+        if(!self->_active||self->_socket!=c)return;
+        int code=error?nw_error_get_error_code(error):0;[self record:@"ELF loader" state:state code:code];
+        if(state==nw_connection_state_waiting&&error&&nw_error_get_error_domain(error)==nw_error_domain_posix&&code==ECONNREFUSED){[self directFailed:c];return;}
         if(state==nw_connection_state_failed){[self directFailed:c];return;}
         if(state==nw_connection_state_ready&&!self->_sendStarted){
             self->_loaderConnected=self->_sendStarted=YES;

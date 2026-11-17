@@ -8,6 +8,12 @@ static inline bool qp_loader_image_valid(const void *data,size_t size) {
     return p&&size>=64&&size<=64u*1024u*1024u&&!memcmp(p,"\177ELF",4)&&p[4]==2&&p[5]==1&&qp_u16(p+18)==62;
 }
 static inline bool qp_loader_fallback_allowed(bool connected,bool sendStarted) {return !connected&&!sendStarted;}
+/* NWConnection may report ECONNREFUSED as waiting, never failed. A healthy
+ * path's bounded connect timeout can also mean absent. An accepted socket,
+ * permission denial or other blocked path must never authorize a new helper. */
+static inline bool qp_loader_service_absent(bool connected,bool blocked,bool pathReady,bool refused,bool deadline) {
+    return !connected&&!blocked&&(refused||(deadline&&pathReady));
+}
 /* Accept only the dedicated, newly allocated Payload Manager directory. */
 static inline bool qp_loader_owned_path(const char *path,const char *stem,const char *filename) {
     if(!path||!stem||!filename||strncmp(stem,"uhnmeyker-ps5pad-",16))return false;

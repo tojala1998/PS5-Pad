@@ -491,13 +491,13 @@ static void Round(UIView *view,CGFloat radius) {
     if(_initialization.phase==QP_INIT_DONE && (!_link.ready || !_link.padReady)) { qp_initialization_cancel(&_initialization); _showingLinkProgress=YES; }
     BOOL pending=qp_initialization_pending(&_initialization);
     NSString *progress=nil;
-    if(_initialization.phase==QP_INIT_WAITING) progress=_link.ready?@"Checking controller…":(_initialization.loaded?@"Starting service…":@"Connecting to service…");
+    if(_initialization.phase==QP_INIT_WAITING) progress=_link.ready?@"Checking controller…":(_initialization.loaded?_link.message:@"Connecting to service…");
     else if(_initialization.phase==QP_INIT_SENT) progress=@"Initializing controller…";
     else if(_initialization.phase==QP_INIT_DONE) progress=_link.waitingForProfile?@"Choose your profile on the TV…":_link.message;
     else if(_initialization.phase==QP_INIT_FAILED) progress=_initializationFailure?:_link.message;
-    _statusLabel.text=_ensureSession.active?(_ensureSession.loaded?@"Starting service…":@"Reconnecting…"):(_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.waitingForProfile?@"Choose your profile on TV":(_link.profileAssigned?@"Controller ready":(_link.padReady?@"Controller connected":@"Service connected · use •••"))):
-        (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5"))))));
-    if(_ensureSession.active) _result.text=_ensureSession.loaded?@"Starting the saved PS5 session…":@"Reconnecting to your existing controller…";
+    _statusLabel.text=_ensureSession.active?(_ensureSession.loaded?_link.message:@"Reconnecting…"):(_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.waitingForProfile?@"Choose your profile on TV":(_link.profileAssigned?@"Controller ready":(_link.padReady?@"Controller connected":@"Service connected · use •••"))):
+        (_link.connecting?@"Connecting…":(_host.length?(_link.failureKind!=QPConnectionFailureNone?@"Connection failed · use •••":@"Offline · use •••"):@"Add your PS5"))))));
+    if(_ensureSession.active) _result.text=_ensureSession.loaded?_link.message:@"Reconnecting to your existing controller…";
     else if(progress) _result.text=progress;
     else if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
     else if(_showingLinkProgress) { _showingLinkProgress=NO; _result.text=_link.message; }

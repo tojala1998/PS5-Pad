@@ -1,0 +1,22 @@
+PS5 Pad 0.4.13 (build 19), bundled helper 2.7
+
+Fix the failed on-iPhone helper-startup test in 0.4.12.
+The phone diagnostic retained "Controller service did not answer safely";
+the PS5 had no new helper process. The probe aborted before sending the ELF.
+
+Network.framework can report connection refusal in its waiting state without
+ever entering failed. The helper probe now handles that refusal immediately,
+and accepts a bounded connect timeout on a healthy, permitted network path.
+An accepted socket, permission denial, blocked path or invalid/busy service
+still never authorizes sending another helper. The loader also handles a
+waiting/refused event immediately, allowing Payload Manager fallback.
+
+Startup shows the current stage and keeps an actual failure message visible.
+A bounded diagnostic records only startup stages, network states/error codes
+and HTTP status codes, never keyboard text or account credentials.
+Regression checks cover waiting/refused, waiting/timeout, permission denial,
+accepted sockets, unhealthy paths and no duplicate-send behavior.
+
+The helper stays stopped for the owner's next on-iPhone startup test.
+Console Payload Manager upload/launch was verified in 0.4.12; automatic startup
+from the updated iPhone app remains pending owner confirmation.

@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.13",
+          "buildVersion": "19",
+          "date": "2026-11-16",
+          "localizedDescription": "PS5 Pad 0.4.13 (build 19), bundled helper 2.7\n\nFix the failed on-iPhone helper-startup test in 0.4.12.\nThe phone diagnostic retained \"Controller service did not answer safely\";\nthe PS5 had no new helper process. The probe aborted before sending the ELF.\n\nNetwork.framework can report connection refusal in its waiting state without\never entering failed. The helper probe now handles that refusal immediately,\nand accepts a bounded connect timeout on a healthy, permitted network path.\nAn accepted socket, permission denial, blocked path or invalid/busy service\nstill never authorizes sending another helper. The loader also handles a\nwaiting/refused event immediately, allowing Payload Manager fallback.\n\nStartup shows the current stage and keeps an actual failure message visible.\nA bounded diagnostic records only startup stages, network states/error codes\nand HTTP status codes, never keyboard text or account credentials.\nRegression checks cover waiting/refused, waiting/timeout, permission denial,\naccepted sockets, unhealthy paths and no duplicate-send behavior.\n\nThe helper stays stopped for the owner's next on-iPhone startup test.\nConsole Payload Manager upload/launch was verified in 0.4.12; automatic startup\nfrom the updated iPhone app remains pending owner confirmation.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.13/PS5-Pad-0.4.13-unsigned.ipa",
+          "size": 150206,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.12",
           "buildVersion": "18",
           "date": "2026-11-16",
@@ -55,11 +64,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.12",
+      "version": "0.4.13",
       "versionDate": "2026-11-16",
-      "versionDescription": "PS5 Pad 0.4.12 (build 18), bundled helper 2.7\n\nThe app can start its own bundled helper directly from the iPhone.\nIt first reuses an answering PS5 Pad helper. If absent, it sends the bundled\nPS5 ELF over TCP 9021 and half-closes the write side to start it.\nIf the loader never accepts the connection, it falls back to Payload Manager\non HTTP 8084: check an empty private folder, upload, find the exact stored path,\nand launch. A transfer that has already started never triggers a second send.\n\nAfter either launch route, the app polls for a valid helper greeting and\nrequires helper 2.7 or newer before continuing controller initialization.\nThe connection menu reports the actual running helper version.\nBackgrounding cancels pending work. The app never changes Payload Manager's\nautoload settings, replaces elfldr, or overwrites another stored payload.\nPayload Manager uses a unique uhnmeyker-ps5pad folder; after a successful\ngreeting it removes only that temporary upload. Failed attempts can leave that\nprivate upload behind for inspection. There is no automatic helper upgrade\nor replacement of a running controller session.\n\nThe PS5 must already be jailbroken with either its ELF loader or Payload Manager\nrunning. No Windows bridge or PS5Upload installation is required.\n\nImplementation references (protocol behavior, not copied upstream source):\nhttps://github.com/phantomptr/ps5upload/blob/b30005ea499ad4ec0634e8a7ed16df1e310a6013/engine/crates/ps5upload-core/src/payload_lifecycle.rs\nhttps://github.com/phantomptr/ps5upload/blob/b30005ea499ad4ec0634e8a7ed16df1e310a6013/engine/crates/ps5upload-core/src/payload_manager.rs\n\nLocal loader-policy/build tests and command-line console checks are separate\nfrom the remaining on-iPhone startup test. A successful upload alone does not\nprove that a helper started; a valid greeting is required.\n\nConsole verification: Payload Manager 0.6.3 accepted the exact helper bytes,\nlaunched helper 2.7, and removed the private temporary upload after its valid\ngreeting. PS5 Home remained focused. No controller initialization, buttons,\npower commands, autoload changes or loader replacement were sent.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.12/PS5-Pad-0.4.12-unsigned.ipa",
-      "size": 148697
+      "versionDescription": "PS5 Pad 0.4.13 (build 19), bundled helper 2.7\n\nFix the failed on-iPhone helper-startup test in 0.4.12.\nThe phone diagnostic retained \"Controller service did not answer safely\";\nthe PS5 had no new helper process. The probe aborted before sending the ELF.\n\nNetwork.framework can report connection refusal in its waiting state without\never entering failed. The helper probe now handles that refusal immediately,\nand accepts a bounded connect timeout on a healthy, permitted network path.\nAn accepted socket, permission denial, blocked path or invalid/busy service\nstill never authorizes sending another helper. The loader also handles a\nwaiting/refused event immediately, allowing Payload Manager fallback.\n\nStartup shows the current stage and keeps an actual failure message visible.\nA bounded diagnostic records only startup stages, network states/error codes\nand HTTP status codes, never keyboard text or account credentials.\nRegression checks cover waiting/refused, waiting/timeout, permission denial,\naccepted sockets, unhealthy paths and no duplicate-send behavior.\n\nThe helper stays stopped for the owner's next on-iPhone startup test.\nConsole Payload Manager upload/launch was verified in 0.4.12; automatic startup\nfrom the updated iPhone app remains pending owner confirmation.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.13/PS5-Pad-0.4.13-unsigned.ipa",
+      "size": 150206
     }
   ],
   "news": []

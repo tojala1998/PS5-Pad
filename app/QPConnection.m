@@ -176,7 +176,10 @@
         if(state==nw_connection_state_ready) {
             self->_tcpReady=YES; self.message=@"Checking controller…"; self->_started=[self now]; [self receive:generation];
         } else if(state==nw_connection_state_waiting) {
-            self.message=@"Allow Local Network access; check Wi-Fi";
+            if([self serviceUnavailableForError:error deadline:NO]) {
+                [self failConnection:@"Controller service is not running." unavailable:YES];return;
+            }
+            self.message=@"Waiting for the PS5 connection…";
             if(error && !(nw_error_get_error_domain(error)==nw_error_domain_posix &&
                 (nw_error_get_error_code(error)==ECONNREFUSED || nw_error_get_error_code(error)==ETIMEDOUT))) self->_connectBlocked=YES;
         } else if(state==nw_connection_state_failed) {

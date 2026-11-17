@@ -8,6 +8,14 @@ int main(void) {
     assert(!qp_loader_image_valid(NULL,64));
     assert(qp_loader_fallback_allowed(false,false));
     assert(!qp_loader_fallback_allowed(true,false));assert(!qp_loader_fallback_allowed(true,true));assert(!qp_loader_fallback_allowed(false,true));
+    /* Reproduce iOS waiting/refused and waiting/timeout, not just failed. */
+    assert(qp_loader_service_absent(false,false,true,true,false));
+    assert(qp_loader_service_absent(false,false,false,true,false));
+    assert(!qp_loader_service_absent(false,false,true,false,false));
+    assert(qp_loader_service_absent(false,false,true,false,true));
+    assert(!qp_loader_service_absent(false,true,true,true,true));
+    assert(!qp_loader_service_absent(true,false,true,true,true));
+    assert(!qp_loader_service_absent(false,false,false,false,true));
     const char *stem="uhnmeyker-ps5pad-abc",*name="uhnmeyker-ps5pad-abc.elf";
     assert(qp_loader_owned_path("/data/pldmgr/payloads/local/uhnmeyker-ps5pad-abc/uhnmeyker-ps5pad-abc.elf",stem,name));
     assert(qp_loader_owned_path("/data/pldmgr/payloads/uhnmeyker-ps5pad-abc/uhnmeyker-ps5pad-abc.elf",stem,name));
