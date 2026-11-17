@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.15",
+          "buildVersion": "21",
+          "date": "2026-11-17",
+          "localizedDescription": "PS5 Pad 0.4.15 (build 21) — 0.4.13 controller baseline, independent Power Off\n\nRestores the 0.4.13 controller, keyboard, discovery and initialization source.\nBundles the exact original helper 2.7 from 0.4.13, verified by SHA-256; it is\nnot rebuilt or silently replaced while running.\n\nPower Off is now a separate, explicitly confirmed one-shot request through the\nPS5 ELF loader on port 9021. It calls sceSystemStateMgrTurnOff and does not\nrequire a profile selection, controller initialization, a helper version check,\nor successful controller ownership detection. It never sends the old helper's\nRest Mode-producing command, and never automatically retries an uncertain send.\nThe result is shown independently of the controller/profile status message.\n\nThe ELF loader must be running. A transfer acknowledgment is not proof of a\nphysical shutdown. Full shutdown behavior still needs an on-console test.\nA full shutdown closes running apps and ends the jailbreak; power on and run\nthe jailbreak again before reconnecting. Existing running helpers are left alone.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.15/PS5-Pad-0.4.15-unsigned.ipa",
+          "size": 170813,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.14",
           "buildVersion": "20",
           "date": "2026-11-17",
@@ -73,11 +82,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.14",
+      "version": "0.4.15",
       "versionDate": "2026-11-17",
-      "versionDescription": "PS5 Pad 0.4.14 (build 20)\n\n- Includes PS5 helper 2.8, updated to request full shutdown through\n  sceSystemStateMgrTurnOff instead of the ShellCore shutdown call that entered\n  Rest Mode on the tested PS5. Physical full-shutdown behavior is not yet\n  confirmed on the console; a successful API response alone is not proof.\n- Disables Power Off when connected to helper 2.7 or older, even if that helper\n  advertises the Power Off capability. All other controller features remain\n  available when using a compatible older helper.\n- Reuses an already-running helper without stopping or replacing it silently.\n  To use the updated Power Off command, replace the running older helper 2.7\n  with the new helper 2.8 when convenient.\n- Preserves console discovery, controller operation, Kodi controls, and SideStore\n  signing/install behavior. No settings are preseeded or migrated.\n\nA genuine full shutdown ends the PS5 jailbreak. You must turn on the console\nand run the jailbreak again before using PS5 Pad.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.14/PS5-Pad-0.4.14-unsigned.ipa",
-      "size": 143008
+      "versionDescription": "PS5 Pad 0.4.15 (build 21) — 0.4.13 controller baseline, independent Power Off\n\nRestores the 0.4.13 controller, keyboard, discovery and initialization source.\nBundles the exact original helper 2.7 from 0.4.13, verified by SHA-256; it is\nnot rebuilt or silently replaced while running.\n\nPower Off is now a separate, explicitly confirmed one-shot request through the\nPS5 ELF loader on port 9021. It calls sceSystemStateMgrTurnOff and does not\nrequire a profile selection, controller initialization, a helper version check,\nor successful controller ownership detection. It never sends the old helper's\nRest Mode-producing command, and never automatically retries an uncertain send.\nThe result is shown independently of the controller/profile status message.\n\nThe ELF loader must be running. A transfer acknowledgment is not proof of a\nphysical shutdown. Full shutdown behavior still needs an on-console test.\nA full shutdown closes running apps and ends the jailbreak; power on and run\nthe jailbreak again before reconnecting. Existing running helpers are left alone.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.15/PS5-Pad-0.4.15-unsigned.ipa",
+      "size": 170813
     }
   ],
   "news": []
