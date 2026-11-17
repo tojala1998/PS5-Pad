@@ -11,3 +11,5 @@
 - Keep Apple credentials, certificates, provisioning/pairing files and device data out of the repository.
 - A standalone fresh install has been requested, with bundle ID com.uhnmeyker.ps5pad. Do not migrate or pre-create settings; first run must offer console scanning and selection.
 - Test results distinguish local protocol/build checks from user-confirmed physical inputs. The 0.4.0 UIKit selector correction still requires an on-device touch test.
+
+- Every published app update must include the refreshed source.json and matching versioned IPA/report in the same commit. tools/build.sh stages these after verification. Preserve source identifier com.uhnmeyker.ps5pad.source and app identifier com.uhnmeyker.ps5pad; never publish a newer feed pointing to an unpublished IPA.

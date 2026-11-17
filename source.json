@@ -1,0 +1,38 @@
+{
+  "name": "uhnmeyker - PS5 Pad",
+  "identifier": "com.uhnmeyker.ps5pad.source",
+  "sourceURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/source.json",
+  "apps": [
+    {
+      "name": "PS5 Pad",
+      "bundleIdentifier": "com.uhnmeyker.ps5pad",
+      "developerName": "uhnmeyker",
+      "subtitle": "A direct Wi-Fi media remote for PS5",
+      "localizedDescription": "Control a jailbroken PS5 directly over Wi-Fi. Swipe navigation, controller buttons, Kodi playback controls and a manual live keyboard. Requires the PS5 Pad helper on the console. No Remote Play, audio/video streaming or Windows relay. Experimental software; see version notes for verified behavior and limitations.",
+      "iconURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/docs/PS5-Pad-icon.png",
+      "tintColor": "53D889",
+      "permissions": [
+        {
+          "type": "network",
+          "usageDescription": "PS5 Pad finds your PS5 on Wi-Fi and connects directly to its controller service. It does not stream audio or video."
+        }
+      ],
+      "versions": [
+        {
+          "version": "0.4.9",
+          "date": "2026-11-16",
+          "localizedDescription": "PS5 Pad 0.4.9 (build 15), controller service 2.5\n\nController menu\nOne action is shown: Initialize Controller when disconnected, or Disconnect\nController when a virtual controller is connected. A service connection by itself\nis not a controller connection. Separate Connect / Close connection entries are\nremoved. This includes the menu-only 0.4.8 change.\n\nLive keyboard\nThe owner reported that 0.4.7 connected/disconnected a keyboard but did not type\nhello. Its automatic removal after sending reports explained the short lifetime,\nbut the missing text's cause was not established. Do not count it as a typing pass.\n\nOpening Keyboard now creates one temporary virtual keyboard, waits one second\nbefore enabling the editor, then keeps it connected while the editor is active.\nText changes send live key reports. Backspace and edits within the local text are\napplied by removing the changed suffix and typing its replacement. Edits queue\nbehind acknowledgments, so fast typing does not require one connection per key.\nEnter waits for pending text, sends Enter once, releases it and removes the\nkeyboard. Close cancels pending typing and disconnects without pressing Enter.\nThe field displays only text entered in this session; it does not read the TV's\nexisting field or synchronize changes made with another input device.\n\nA keyboard-specific lease is renewed every 500 ms only during the editor session.\nOrdinary controller heartbeats do not keep the keyboard alive. Connection loss,\napp suspension, profile takeover, controller disconnection, closing the editor or\n1.8 seconds without keyboard renewal releases/removes it. Removal failure keeps\nownership for retry. The virtual controller's sleep behavior remains separate.\nNo typed content is written to logs, preferences or files. Text is limited to 128\nprintable US-ASCII characters using a US keyboard layout. Automatic detection of\nthe PS5 keyboard popup remains unverified and is not implemented.\n\nValidation\nHost socket tests cover persistent typing, backspace, explicit Enter, Close,\ninvalid input, cancellation of queued keys, client disconnect without replay,\nlease expiry despite ordinary pings, and controller disconnect cleanup. Existing\nownership, initialization, protocol, input, lifecycle and discovery checks pass.\nThe unsigned ARM64 app was built and its USB copy verified. Service 2.5 was loaded\nand its live-keyboard capability and ownership-monitor connection verified in\nstandby, without controller initialization, typing or media-app launch.\nTyping in the actual TV field and the final phone menu still need owner testing.\n\nNo device settings, Home Screen layout or signing credentials were changed.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.9/PS5-Pad-0.4.9-unsigned.ipa",
+          "size": 135898,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "version": "0.4.9",
+      "versionDate": "2026-11-16",
+      "versionDescription": "PS5 Pad 0.4.9 (build 15), controller service 2.5\n\nController menu\nOne action is shown: Initialize Controller when disconnected, or Disconnect\nController when a virtual controller is connected. A service connection by itself\nis not a controller connection. Separate Connect / Close connection entries are\nremoved. This includes the menu-only 0.4.8 change.\n\nLive keyboard\nThe owner reported that 0.4.7 connected/disconnected a keyboard but did not type\nhello. Its automatic removal after sending reports explained the short lifetime,\nbut the missing text's cause was not established. Do not count it as a typing pass.\n\nOpening Keyboard now creates one temporary virtual keyboard, waits one second\nbefore enabling the editor, then keeps it connected while the editor is active.\nText changes send live key reports. Backspace and edits within the local text are\napplied by removing the changed suffix and typing its replacement. Edits queue\nbehind acknowledgments, so fast typing does not require one connection per key.\nEnter waits for pending text, sends Enter once, releases it and removes the\nkeyboard. Close cancels pending typing and disconnects without pressing Enter.\nThe field displays only text entered in this session; it does not read the TV's\nexisting field or synchronize changes made with another input device.\n\nA keyboard-specific lease is renewed every 500 ms only during the editor session.\nOrdinary controller heartbeats do not keep the keyboard alive. Connection loss,\napp suspension, profile takeover, controller disconnection, closing the editor or\n1.8 seconds without keyboard renewal releases/removes it. Removal failure keeps\nownership for retry. The virtual controller's sleep behavior remains separate.\nNo typed content is written to logs, preferences or files. Text is limited to 128\nprintable US-ASCII characters using a US keyboard layout. Automatic detection of\nthe PS5 keyboard popup remains unverified and is not implemented.\n\nValidation\nHost socket tests cover persistent typing, backspace, explicit Enter, Close,\ninvalid input, cancellation of queued keys, client disconnect without replay,\nlease expiry despite ordinary pings, and controller disconnect cleanup. Existing\nownership, initialization, protocol, input, lifecycle and discovery checks pass.\nThe unsigned ARM64 app was built and its USB copy verified. Service 2.5 was loaded\nand its live-keyboard capability and ownership-monitor connection verified in\nstandby, without controller initialization, typing or media-app launch.\nTyping in the actual TV field and the final phone menu still need owner testing.\n\nNo device settings, Home Screen layout or signing credentials were changed.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.9/PS5-Pad-0.4.9-unsigned.ipa",
+      "size": 135898
+    }
+  ],
+  "news": []
+}

@@ -82,6 +82,37 @@ bash tools/build.sh /path/to/iPhoneOS16.5.sdk
 
 The script uses a fresh `work/` directory, runs input/wire tests, compiles with warnings treated as errors, validates the archive and writes the unsigned IPA and verification report to `dist/`.
 
+## Updates through SideStore
+
+Add this source once in SideStore's Sources screen:
+
+https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/source.json
+
+[Add to SideStore](sidestore://source?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftojala1998%2FPS5-Pad%2Fmain%2Fsource.json)
+
+The source uses `com.uhnmeyker.ps5pad`, the original unsigned app identifier.
+Use the same Apple Account as the existing standalone installation. Adding a
+source does not itself reinstall or delete an app. SideStore performs signing
+and installation when you choose an update; signing refreshes remain separate
+from publishing new versions. First source import/update on the phone is pending
+owner confirmation.
+
+Successful builds now run `tools/prepare_source.py`: it validates the IPA hash,
+size, bundle identity and version against the build report, stages the versioned
+IPA under `releases/`, and refreshes `source.json`. The newest version goes first;
+existing release dates and older source entries are retained. A different IPA
+cannot replace an already staged version: bump the app version before releasing.
+Commit/publish `source.json` and its versioned IPA/report together with the source
+changes. Building alone does not publish. USB transfer remains available.
+
+To regenerate the feed without rebuilding:
+
+```sh
+python3 tools/prepare_source.py --ipa releases/0.4.9/PS5-Pad-0.4.9-unsigned.ipa --report releases/0.4.9/PS5-Pad-0.4.9-verification.json --check
+```
+
+Feed format: [SideStore documentation](https://docs.sidestore.io/docs/advanced/app-sources).
+
 ## Transfer to an iPhone
 
 The USB transfer needs an already trusted iPhone, LiveContainer, and a Python environment with `pymobiledevice3` installed. It copies the IPA into LiveContainer's Documents folder and reads it back to verify the bytes. It does not sign, install, launch apps, change phone settings or modify the Home Screen.
