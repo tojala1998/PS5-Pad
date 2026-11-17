@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.14",
+          "buildVersion": "20",
+          "date": "2026-11-17",
+          "localizedDescription": "PS5 Pad 0.4.14 (build 20)\n\n- Includes PS5 helper 2.8, updated to request full shutdown through\n  sceSystemStateMgrTurnOff instead of the ShellCore shutdown call that entered\n  Rest Mode on the tested PS5. Physical full-shutdown behavior is not yet\n  confirmed on the console; a successful API response alone is not proof.\n- Disables Power Off when connected to helper 2.7 or older, even if that helper\n  advertises the Power Off capability. All other controller features remain\n  available when using a compatible older helper.\n- Reuses an already-running helper without stopping or replacing it silently.\n  To use the updated Power Off command, replace the running older helper 2.7\n  with the new helper 2.8 when convenient.\n- Preserves console discovery, controller operation, Kodi controls, and SideStore\n  signing/install behavior. No settings are preseeded or migrated.\n\nA genuine full shutdown ends the PS5 jailbreak. You must turn on the console\nand run the jailbreak again before using PS5 Pad.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.14/PS5-Pad-0.4.14-unsigned.ipa",
+          "size": 143008,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.13",
           "buildVersion": "19",
           "date": "2026-11-16",
@@ -64,11 +73,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.13",
-      "versionDate": "2026-11-16",
-      "versionDescription": "PS5 Pad 0.4.13 (build 19), bundled helper 2.7\n\nFix the failed on-iPhone helper-startup test in 0.4.12.\nThe phone diagnostic retained \"Controller service did not answer safely\";\nthe PS5 had no new helper process. The probe aborted before sending the ELF.\n\nNetwork.framework can report connection refusal in its waiting state without\never entering failed. The helper probe now handles that refusal immediately,\nand accepts a bounded connect timeout on a healthy, permitted network path.\nAn accepted socket, permission denial, blocked path or invalid/busy service\nstill never authorizes sending another helper. The loader also handles a\nwaiting/refused event immediately, allowing Payload Manager fallback.\n\nStartup shows the current stage and keeps an actual failure message visible.\nA bounded diagnostic records only startup stages, network states/error codes\nand HTTP status codes, never keyboard text or account credentials.\nRegression checks cover waiting/refused, waiting/timeout, permission denial,\naccepted sockets, unhealthy paths and no duplicate-send behavior.\n\nThe helper stays stopped for the owner's next on-iPhone startup test.\nConsole Payload Manager upload/launch was verified in 0.4.12; automatic startup\nfrom the updated iPhone app remains pending owner confirmation.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.13/PS5-Pad-0.4.13-unsigned.ipa",
-      "size": 150206
+      "version": "0.4.14",
+      "versionDate": "2026-11-17",
+      "versionDescription": "PS5 Pad 0.4.14 (build 20)\n\n- Includes PS5 helper 2.8, updated to request full shutdown through\n  sceSystemStateMgrTurnOff instead of the ShellCore shutdown call that entered\n  Rest Mode on the tested PS5. Physical full-shutdown behavior is not yet\n  confirmed on the console; a successful API response alone is not proof.\n- Disables Power Off when connected to helper 2.7 or older, even if that helper\n  advertises the Power Off capability. All other controller features remain\n  available when using a compatible older helper.\n- Reuses an already-running helper without stopping or replacing it silently.\n  To use the updated Power Off command, replace the running older helper 2.7\n  with the new helper 2.8 when convenient.\n- Preserves console discovery, controller operation, Kodi controls, and SideStore\n  signing/install behavior. No settings are preseeded or migrated.\n\nA genuine full shutdown ends the PS5 jailbreak. You must turn on the console\nand run the jailbreak again before using PS5 Pad.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.14/PS5-Pad-0.4.14-unsigned.ipa",
+      "size": 143008
     }
   ],
   "news": []
