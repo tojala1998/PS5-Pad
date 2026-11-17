@@ -2,11 +2,13 @@
 
 A native iPhone remote for a jailbroken PS5, currently focused on Kodi. It sends controller input directly over the local network: no Remote Play, audio/video stream, or Windows relay.
 
-[Download the unsigned 0.4.11 IPA](releases/0.4.11/PS5-Pad-0.4.11-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.11-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.7.elf)
+[Download the unsigned 0.4.12 IPA](releases/0.4.12/PS5-Pad-0.4.12-unsigned.ipa)  |  [Build notes](docs/PS5-Pad-0.4.12-notes.txt)  |  [Controller ELF](service/prebuilt/padd-controller-2.7.elf)
 
 <img src="docs/PS5-Pad-icon.png" width="130" alt="White PS5 Pad icon">
 
 ## Current build
+
+Version 0.4.12 starts its bundled helper from the iPhone: raw ELF loader on port 9021 first, Payload Manager on port 8084 when the loader cannot be reached. It verifies the helper greeting/version before initialization, preserves existing sessions and refuses duplicate transfers after an uncertain send. The menu displays the running helper version. No PC or PS5Upload app is required; the console must already be jailbroken with one loader available. The Payload Manager upload, launch, helper greeting and temporary-file cleanup were verified on the owner's PS5 (13.60, Payload Manager 0.6.3); iPhone startup confirmation is pending.
 
 Version 0.4.11 adds **Power Off PS5** at the bottom of the three-dot menu, with a separate confirmation. Helper 2.7 uses the console ShellCore shutdown request. Host command tests pass; actual shutdown awaits owner testing.
 

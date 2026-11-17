@@ -11,6 +11,7 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 @property(nonatomic,readonly) BOOL supportsAppState,appStateFresh,kodiRunningKnown,kodiRunning,kodiFocused;
 @property(nonatomic,readonly,copy) NSString *focusedTitle;
 @property(nonatomic,readonly) BOOL ready;
+@property(nonatomic,readonly,copy) NSString *serviceVersion;
 @property(nonatomic,readonly) QPConnectionFailure failureKind;
 @property(nonatomic,readonly) BOOL controllerChecked;
 @property(nonatomic,readonly) BOOL padReady;

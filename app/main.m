@@ -705,7 +705,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)showConnection {
     [self clearControls];
-    NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.message?:@""];
+    NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.ready?[NSString stringWithFormat:@"Helper %@ connected. %@",_link.serviceVersion?:@"",_link.message?:@""]:_link.message?:@""];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:_link.ready?@"PS5 connection":@"Connect to PS5" message:detail preferredStyle:UIAlertControllerStyleAlert];
     BOOL controllerConnected=_link.ready&&_link.padReady;
     if(controllerConnected) {

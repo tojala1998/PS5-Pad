@@ -1,4 +1,5 @@
 #import "QPConnection.h"
+#import "QPHelperLoader.h"
 #import <Network/Network.h>
 #import <UIKit/UIKit.h>
 #import "QPInputQueue.h"
@@ -7,7 +8,7 @@
 
 @interface QPConnection () {
     nw_connection_t _connection;
-    nw_connection_t _loader;
+    QPHelperLoader *_helperLoader;
     NSMutableData *_received;
     NSTimer *_timer;
     QPState _state;
@@ -43,6 +44,7 @@
 @property(nonatomic,readwrite) BOOL supportsAppState,kodiRunningKnown,kodiRunning,kodiFocused;
 @property(nonatomic,readwrite,copy) NSString *focusedTitle;
 @property(nonatomic,readwrite) BOOL ready;
+@property(nonatomic,readwrite,copy) NSString *serviceVersion;
 @property(nonatomic,readwrite) QPConnectionFailure failureKind;
 @property(nonatomic,readwrite) BOOL controllerChecked;
 @property(nonatomic,readwrite) BOOL padReady;
@@ -69,7 +71,7 @@
 - (NSTimeInterval)now { return NSProcessInfo.processInfo.systemUptime; }
 - (void)publish {
     NSDictionary *record=@{@"app":@"PS5 Pad", @"version":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"0.1.2", @"host":_host?:@"",
-        @"port":@9305, @"ready":@(_ready), @"connecting":@(_connecting), @"message":_message?:@"",
+        @"port":@9305, @"service_version":_serviceVersion?:@"", @"ready":@(_ready), @"connecting":@(_connecting), @"message":_message?:@"",
         @"app_state_fresh":@(self.appStateFresh),@"kodi_running_known":@(_kodiRunningKnown),@"kodi_running":@(_kodiRunning),@"kodi_focused":@(_kodiFocused),@"focused_title":_focusedTitle?:@"",
         @"pad_ready":@(_padReady), @"profile_assigned":@(_profileAssigned), @"waiting_for_profile":@(_waitingForProfile), @"ownership_monitor_ready":@(_monitorReady), @"connection_failure":@(_failureKind), @"controller_checked":@(_controllerChecked),
         @"pad_handle":@(_padHandle), @"latency_ms":@(_latency), @"last_ack":@(_lastAck),
@@ -113,7 +115,7 @@
     nw_connection_t old=_connection;
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
-    _controlPayload=nil; _supportsTextInput=NO; _supportsPowerOff=NO;
+    _controlPayload=nil; _supportsTextInput=NO; _supportsPowerOff=NO; _serviceVersion=nil;
     _supportsAppState=_kodiRunningKnown=_kodiRunning=_kodiFocused=_appStateWaiting=NO;
     _appStateRequestAt=_appStateUpdated=0;_focusedTitle=nil;
     _supportsLiveKeyboard=_keyboardConnected=_keyboardActive=_keyboardClosing=NO;
@@ -122,7 +124,7 @@
     _supportsOwnership=_profileAssigned=_waitingForProfile=_monitorReady=NO;
     _ready=NO; _padReady=NO; _connecting=NO; _failureKind=QPConnectionFailureNone; _controllerChecked=NO; _inflight=0; _state=qp_neutral(); _dirty=NO;
     _controlBusy=NO; _controlType=0; _controlSent=NO; _supportsControl=NO; _supportsDisconnectController=NO; _disconnectRequested=NO; _initializationFailed=NO; qp_input_reset(&_inputs);
-    if(_loader) { nw_connection_cancel(_loader); _loader=nil; }
+    if(_helperLoader) { [_helperLoader cancel]; _helperLoader=nil; }
     _message=reason; _latency=-1; [self invalidateInputFeedback];
     if (old) {
         if (sendNeutral) {
@@ -154,7 +156,7 @@
     [self publish];
 }
 - (void)limitConnectWait:(NSTimeInterval)timeout {
-    if(_connecting && !_loader) { _connectTimeout=MIN(_connectTimeout,timeout); _started=[self now]; }
+    if(_connecting && !_helperLoader) { _connectTimeout=MIN(_connectTimeout,timeout); _started=[self now]; }
 }
 - (void)connectTo:(NSString *)host { [self connectTo:host timeout:30]; }
 - (void)connectTo:(NSString *)host timeout:(NSTimeInterval)timeout {
@@ -301,6 +303,7 @@
             [self readOwnershipFlags:qp_u32(p+12)];
             _padHandle=(int32_t)qp_u32(p+4); _ready=YES; _connecting=NO;
             _supportsControl=(qp_u32(p+12)&QP_CAP_CONTROL)!=0;
+            _serviceVersion=[NSString stringWithFormat:@"%u.%u",qp_u16(p+2)>>8,qp_u16(p+2)&255];
             _supportsDisconnectController=qp_supports_disconnect(qp_u16(p+2),qp_u32(p+12));
             _padReady=(qp_u32(p+12)&1)!=0 && _padHandle>=0;
             _message=@"PS5 Pad service connected."; _lastPong=[self now]; _dirty=YES;
@@ -526,33 +529,19 @@
 - (void)launchVLC { [self control:QP_VLC]; }
 - (void)launchKodi { [self control:QP_KODI]; }
 - (void)loadServiceAt:(NSString *)host {
-    [self disconnect:@"Loading controller service…"]; _host=[host copy];
+    [self disconnect:@"Starting controller service…"];_host=[host copy];
     NSData *elf=[NSData dataWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"padd-controller" ofType:@"elf"]];
-    if(!elf.length) { [self failConnection:@"The controller service is missing from this build." unavailable:NO]; return; }
-    _connecting=YES;
-    NSUInteger generation=_generation;
-    _loader=nw_connection_create(nw_endpoint_create_host(host.UTF8String,"9021"),
-        nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL,NW_PARAMETERS_DEFAULT_CONFIGURATION));
-    nw_connection_t loader=_loader; __weak QPConnection *weakSelf=self;
-    nw_connection_set_queue(loader,dispatch_get_main_queue());
-    nw_connection_set_state_changed_handler(loader,^(nw_connection_state_t state,nw_error_t error){
-        (void)error; QPConnection *self=weakSelf; if(!self || self->_generation!=generation) return;
-        if(state==nw_connection_state_failed) { [self failConnection:@"ELF loader unavailable. Run the jailbreak on the PS5 first." unavailable:NO]; return; }
-        if(state==nw_connection_state_ready) {
-            dispatch_data_t data=dispatch_data_create(elf.bytes,elf.length,dispatch_get_main_queue(),DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-            nw_connection_send(loader,data,NW_CONNECTION_FINAL_MESSAGE_CONTEXT,true,^(nw_error_t sendError){
-                if(self->_generation!=generation) return;
-                if(sendError) { [self failConnection:@"Couldn’t send the controller service." unavailable:NO]; return; }
-                self.message=@"Service sent. Waiting for PS5…"; [self publish];
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{
-                    if(self->_generation==generation) [self connectTo:host timeout:3];
-                });
-            });
-        }
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,8*NSEC_PER_SEC),dispatch_get_main_queue(),^{
-        if(self->_generation==generation) [self failConnection:@"ELF loader did not respond. Check the PS5 jailbreak." unavailable:NO];
-    });
-    nw_connection_start(loader); [self publish];
+    _connecting=YES;NSUInteger generation=_generation;
+    _helperLoader=[QPHelperLoader new];__weak QPConnection *weakSelf=self;
+    _helperLoader.progress=^(NSString *message){QPConnection *self=weakSelf;if(!self||self->_generation!=generation)return;self.message=message;[self publish];};
+    _helperLoader.completed=^(NSString *error){
+        QPConnection *self=weakSelf;if(!self||self->_generation!=generation)return;
+        if(error){[self failConnection:error unavailable:NO];return;}
+        /* The read-only greeting probe closes before the normal control connection. */
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,250*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+            if(self->_generation==generation)[self connectTo:host timeout:3];
+        });
+    };
+    [_helperLoader start:host image:elf];[self publish];
 }
 @end

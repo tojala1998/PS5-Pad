@@ -1,0 +1,34 @@
+PS5 Pad 0.4.12 (build 18), bundled helper 2.7
+
+The app can start its own bundled helper directly from the iPhone.
+It first reuses an answering PS5 Pad helper. If absent, it sends the bundled
+PS5 ELF over TCP 9021 and half-closes the write side to start it.
+If the loader never accepts the connection, it falls back to Payload Manager
+on HTTP 8084: check an empty private folder, upload, find the exact stored path,
+and launch. A transfer that has already started never triggers a second send.
+
+After either launch route, the app polls for a valid helper greeting and
+requires helper 2.7 or newer before continuing controller initialization.
+The connection menu reports the actual running helper version.
+Backgrounding cancels pending work. The app never changes Payload Manager's
+autoload settings, replaces elfldr, or overwrites another stored payload.
+Payload Manager uses a unique uhnmeyker-ps5pad folder; after a successful
+greeting it removes only that temporary upload. Failed attempts can leave that
+private upload behind for inspection. There is no automatic helper upgrade
+or replacement of a running controller session.
+
+The PS5 must already be jailbroken with either its ELF loader or Payload Manager
+running. No Windows bridge or PS5Upload installation is required.
+
+Implementation references (protocol behavior, not copied upstream source):
+https://github.com/phantomptr/ps5upload/blob/b30005ea499ad4ec0634e8a7ed16df1e310a6013/engine/crates/ps5upload-core/src/payload_lifecycle.rs
+https://github.com/phantomptr/ps5upload/blob/b30005ea499ad4ec0634e8a7ed16df1e310a6013/engine/crates/ps5upload-core/src/payload_manager.rs
+
+Local loader-policy/build tests and command-line console checks are separate
+from the remaining on-iPhone startup test. A successful upload alone does not
+prove that a helper started; a valid greeting is required.
+
+Console verification: Payload Manager 0.6.3 accepted the exact helper bytes,
+launched helper 2.7, and removed the private temporary upload after its valid
+greeting. PS5 Home remained focused. No controller initialization, buttons,
+power commands, autoload changes or loader replacement were sent.

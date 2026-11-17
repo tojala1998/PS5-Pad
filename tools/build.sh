@@ -8,6 +8,8 @@ mkdir -p "$ROOT/work" "$ROOT/dist"
 BUILD="$(mktemp -d "$ROOT/work/ps5-pad-build.XXXXXXXX")"
 APP="$BUILD/Payload/PS5Pad.app"
 mkdir -p "$APP"
+cc -std=c11 -Wall -Wextra -Werror test_loader.c -o "$BUILD/test_loader"
+"$BUILD/test_loader"
 cc -std=c11 -Wall -Wextra -Werror test_protocol.c -o "$BUILD/test_protocol"
 cc -std=c11 -Wall -Wextra -Werror test_input_queue.c -o "$BUILD/test_input_queue"
 cc -std=c11 -Wall -Wextra -Werror test_initialization.c -o "$BUILD/test_initialization"
@@ -29,8 +31,10 @@ clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -W
   -Werror -Wno-unused-parameter -c QPDiscovery.m -o "$BUILD/QPDiscovery.o"
 clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
   -Werror -Wno-unused-parameter -c QPLocalNetworkAccess.m -o "$BUILD/QPLocalNetworkAccess.o"
+clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
+  -Werror -Wno-unused-parameter -c QPHelperLoader.m -o "$BUILD/QPHelperLoader.o"
 ld64.lld-18 -arch arm64 -platform_version ios 15.0 16.5 -syslibroot "$SDK" \
-  -o "$APP/PS5Pad" "$BUILD/main.o" "$BUILD/QPConnection.o" "$BUILD/QPDiscovery.o" "$BUILD/QPLocalNetworkAccess.o" \
+  -o "$APP/PS5Pad" "$BUILD/main.o" "$BUILD/QPConnection.o" "$BUILD/QPDiscovery.o" "$BUILD/QPLocalNetworkAccess.o" "$BUILD/QPHelperLoader.o" \
   -lSystem -lobjc -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework Network \
   -headerpad 0x4000 -no_adhoc_codesign
 cp Info.plist "$APP/Info.plist"
