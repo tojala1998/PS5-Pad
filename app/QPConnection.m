@@ -16,6 +16,7 @@
     QPInputFeedbackGate _feedbackGate;
     uint64_t _sentFeedbackEpoch;
     uint32_t _sequence, _inflight, _lastAck, _pingToken, _failures;
+    uint16_t _payloadVersion;
     uint32_t _lastInputMask, _lastAckedButtons, _sentButtons;
     NSUInteger _inputEvents;
     NSTimeInterval _sentAt, _lastPing, _lastPong, _started;
@@ -92,7 +93,7 @@
     if (_changed) _changed();
 }
 - (void)readOwnershipFlags:(uint32_t)flags {
-    _supportsPowerOff=(flags&QP_CAP_POWER_OFF)!=0;
+    _supportsPowerOff=qp_supports_power_off(_payloadVersion,flags);
     _supportsAppState=(flags&QP_CAP_APP_STATE)!=0;
     _supportsTextInput=(flags&QP_CAP_TEXT_INPUT)!=0;
     _supportsLiveKeyboard=(flags&QP_CAP_LIVE_KEYBOARD)!=0;
@@ -115,7 +116,7 @@
     nw_connection_t old=_connection;
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
-    _controlPayload=nil; _supportsTextInput=NO; _supportsPowerOff=NO; _serviceVersion=nil;
+    _controlPayload=nil; _supportsTextInput=NO; _supportsPowerOff=NO; _payloadVersion=0; _serviceVersion=nil;
     _supportsAppState=_kodiRunningKnown=_kodiRunning=_kodiFocused=_appStateWaiting=NO;
     _appStateRequestAt=_appStateUpdated=0;_focusedTitle=nil;
     _supportsLiveKeyboard=_keyboardConnected=_keyboardActive=_keyboardClosing=NO;
@@ -303,6 +304,7 @@
             if(qp_u16(p)!=1 || (!(qp_u32(p+12)&0x10000) && (!(qp_u32(p+12)&1) || (int32_t)qp_u32(p+4)<0 || qp_u32(p+16)))) {
                 [self failConnection:@"PS5 service is running, but its controller isn’t ready." unavailable:NO]; return;
             }
+            _payloadVersion=qp_u16(p+2);
             [self readOwnershipFlags:qp_u32(p+12)];
             _padHandle=(int32_t)qp_u32(p+4); _ready=YES; _connecting=NO;
             _supportsControl=(qp_u32(p+12)&QP_CAP_CONTROL)!=0;
@@ -326,6 +328,7 @@
             _lastPong=[self now]; _latency=(NSInteger)((_lastPong-_lastPing)*1000);
             _failures=qp_u32(p+32);
             _padHandle=(int32_t)qp_u32(p+16);
+            _payloadVersion=qp_u16(p+6);
             [self readOwnershipFlags:qp_u32(p+20)];
             BOOL reportedReady=(qp_u32(p+20)&1)!=0 && _padHandle>=0 && !_initializationFailed;
             if(reportedReady!=_padReady) {

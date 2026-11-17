@@ -17,6 +17,11 @@ static inline uint32_t qp_u32(const uint8_t *p) { return qp_u16(p) | ((uint32_t)
 static inline int qp_supports_disconnect(uint16_t payloadVersion,uint32_t flags) {
     return payloadVersion>=0x0203 && (flags&QP_CAP_CONTROL) && (flags&QP_CAP_DISCONNECT_CONTROLLER);
 }
+/* Helper 2.7 advertised Power Off but entered Rest Mode on this console.
+ * Require a corrected 2.8+ helper in addition to the advertised capability. */
+static inline int qp_supports_power_off(uint16_t payloadVersion,uint32_t flags) {
+    return payloadVersion>=0x0208 && (flags&QP_CAP_CONTROL) && (flags&QP_CAP_POWER_OFF);
+}
 static inline int qp_disconnect_response_valid(const uint8_t *status) {
     return qp_u32(status)==0 && !(qp_u32(status+20)&1) && (int32_t)qp_u32(status+16)<0;
 }

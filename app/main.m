@@ -706,6 +706,8 @@ static void Round(UIView *view,CGFloat radius) {
 - (void)showConnection {
     [self clearControls];
     NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.ready?[NSString stringWithFormat:@"Helper %@ connected. %@",_link.serviceVersion?:@"",_link.message?:@""]:_link.message?:@""];
+    if(_link.ready&&!_link.supportsPowerOff)
+        detail=[detail stringByAppendingString:@"\n\nFull Power Off requires helper 2.8 or newer. Controller functions remain available. The running helper is never replaced automatically."];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:_link.ready?@"PS5 connection":@"Connect to PS5" message:detail preferredStyle:UIAlertControllerStyleAlert];
     BOOL controllerConnected=_link.ready&&_link.padReady;
     if(controllerConnected) {
