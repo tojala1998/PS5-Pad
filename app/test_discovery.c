@@ -3,6 +3,11 @@
 #include <stdio.h>
 #include <sys/wait.h>
 
+/* Apple's strict POSIX headers omit this IPv4 loopback constant. */
+#ifndef INADDR_LOOPBACK
+#define INADDR_LOOPBACK 0x7f000001u
+#endif
+
 static int serve(const uint8_t *bytes,size_t count,int slow) {
     int listener=socket(AF_INET,SOCK_STREAM,0); assert(listener>=0);
     struct sockaddr_in address={0}; address.sin_family=AF_INET; address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
