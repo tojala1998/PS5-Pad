@@ -119,7 +119,9 @@ python3 tools/prepare_source.py --ipa releases/0.4.9/PS5-Pad-0.4.9-unsigned.ipa 
 
 Feed format: [SideStore documentation](https://docs.sidestore.io/docs/advanced/app-sources).
 
-## Transfer to an iPhone
+## Optional USB transfer to an iPhone
+
+Normal updates use the GitHub-backed SideStore source above. Builds do not automatically copy installers to LiveContainer Documents. Use USB transfer only when explicitly needed.
 
 The USB transfer needs an already trusted iPhone, LiveContainer, and a Python environment with `pymobiledevice3` installed. It copies the IPA into LiveContainer's Documents folder and reads it back to verify the bytes. It does not sign, install, launch apps, change phone settings or modify the Home Screen.
 
