@@ -23,17 +23,22 @@ cc -std=c11 -Wall -Wextra -Werror test_input_feedback.c -o "$BUILD/test_input_fe
 cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror test_discovery.c -o "$BUILD/test_discovery"
 "$BUILD/test_discovery"
 python3 check_ui_contract.py "$SDK"
-clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
-  -Werror -Wno-unused-parameter -c main.m -o "$BUILD/main.o"
-clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
-  -Werror -Wno-unused-parameter -c QPConnection.m -o "$BUILD/QPConnection.o"
-clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
-  -Werror -Wno-unused-parameter -c QPDiscovery.m -o "$BUILD/QPDiscovery.o"
-clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
-  -Werror -Wno-unused-parameter -c QPLocalNetworkAccess.m -o "$BUILD/QPLocalNetworkAccess.o"
-clang-18 -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
-  -Werror -Wno-unused-parameter -c QPHelperLoader.m -o "$BUILD/QPHelperLoader.o"
-ld64.lld-18 -arch arm64 -platform_version ios 15.0 16.5 -syslibroot "$SDK" \
+# Keep the existing portable compiler pipeline, but use the installed Apple
+# toolchain on GitHub's macOS runners instead of requiring Linux llvm-18.
+if [[ "$(uname -s)" == Darwin ]]; then
+  IOS_CC=(xcrun --sdk iphoneos clang)
+  IOS_LD=(xcrun --sdk iphoneos ld)
+  SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+else
+  IOS_CC=(clang-18)
+  IOS_LD=(ld64.lld-18)
+  SDK_VERSION=16.5
+fi
+for source in main QPConnection QPDiscovery QPLocalNetworkAccess QPHelperLoader; do
+  "${IOS_CC[@]}" -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
+    -Werror -Wno-unused-parameter -c "$source.m" -o "$BUILD/$source.o"
+done
+"${IOS_LD[@]}" -arch arm64 -platform_version ios 15.0 "$SDK_VERSION" -syslibroot "$SDK" \
   -o "$APP/PS5Pad" "$BUILD/main.o" "$BUILD/QPConnection.o" "$BUILD/QPDiscovery.o" "$BUILD/QPLocalNetworkAccess.o" "$BUILD/QPHelperLoader.o" \
   -lSystem -lobjc -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework Network \
   -headerpad 0x4000 -no_adhoc_codesign

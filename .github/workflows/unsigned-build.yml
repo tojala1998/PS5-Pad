@@ -1,0 +1,115 @@
+name: Build PS5 ELF and unsigned iOS IPA
+
+# Every source candidate builds testable artifacts. Nothing here publishes to
+# main, modifies source.json in the remote repository, or touches either device.
+on:
+  push:
+    branches:
+      - main
+      - fix/full-power-off-helper-2-8
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ps5-helper:
+    name: PS5 helper 2.8 (SDK v0.43)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned SDK prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 lld-18 llvm-18 unzip curl
+      - name: Download and verify official PS5 SDK v0.43
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_zip="$RUNNER_TEMP/ps5-payload-sdk-v0.43.zip"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/ps5-payload-dev/sdk/releases/download/v0.43/ps5-payload-sdk.zip" \
+            --output "$sdk_zip"
+          echo "a9cc9929f21b2b2c5d5b309f3bab4997067c45281c0622cf4838b1aecba66fcb  $sdk_zip" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/ps5sdk"
+          unzip -q "$sdk_zip" -d "$RUNNER_TEMP/ps5sdk"
+          test -x "$RUNNER_TEMP/ps5sdk/ps5-payload-sdk/bin/prospero-clang"
+      - name: Native service regression tests
+        run: make -C service check
+      - name: Cross-compile PS5 helper
+        shell: bash
+        env:
+          PS5_PAYLOAD_SDK: ${{ runner.temp }}/ps5sdk/ps5-payload-sdk
+        run: |
+          set -euo pipefail
+          make -C service all BUILD="$RUNNER_TEMP/ps5-helper-build"
+          mkdir -p dist
+          cp "$RUNNER_TEMP/ps5-helper-build/padd-controller.elf" dist/padd-controller-2.8.elf
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          p=Path('dist/padd-controller-2.8.elf')
+          elf=p.read_bytes()
+          assert len(elf)>4096 and elf[:4]==b'\x7fELF'
+          assert elf[4]==2 and elf[5]==1 and struct.unpack_from('<H',elf,18)[0]==62
+          assert 'sceSystemStateMgrTurnOff();' in Path('service/payload/system_ps5.c').read_text()
+          print('Verified PS5 ELF header and the full-power-off source call; console behavior untested.')
+          PY
+          sha256sum dist/padd-controller-2.8.elf
+      - name: Preserve verified helper for iOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5-pad-helper-2.8
+          path: dist/padd-controller-2.8.elf
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-ipa:
+    name: Unsigned iOS IPA (SideStore candidate)
+    needs: ps5-helper
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download helper compiled by this workflow run
+        uses: actions/download-artifact@v4
+        with:
+          name: ps5-pad-helper-2.8
+          path: service/prebuilt
+      - name: Build unsigned iOS app with native Xcode toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s service/prebuilt/padd-controller-2.8.elf
+          xcodebuild -version
+          sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "Using iOS SDK: $sdk"
+          bash tools/build.sh "$sdk"
+      - name: Verify IPA report and bundled helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 app/verify_ipa.py \
+            dist/PS5-Pad-0.4.14-unsigned.ipa \
+            --elf service/prebuilt/padd-controller-2.8.elf \
+            --report "$RUNNER_TEMP/independent-verification.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('dist/PS5-Pad-0.4.14-verification.json').read_text())
+          b=json.loads(Path(__import__('os').environ['RUNNER_TEMP'],'independent-verification.json').read_text())
+          assert a==b
+          assert a['version']=='0.4.14' and str(a['build'])=='20'
+          assert a['unsigned'] and a['bundle_id']=='com.uhnmeyker.ps5pad'
+          print('IPA, ELF, app identity, and independent SHA-256 verification match.')
+          PY
+          shasum -a 256 dist/PS5-Pad-0.4.14-unsigned.ipa service/prebuilt/padd-controller-2.8.elf
+      - name: Upload unsigned SideStore candidate (no release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps5-pad-0.4.14-unsigned-candidate
+          path: |
+            dist/PS5-Pad-0.4.14-unsigned.ipa
+            dist/PS5-Pad-0.4.14-verification.json
+          if-no-files-found: error
+          retention-days: 14
