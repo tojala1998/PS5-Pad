@@ -6,6 +6,12 @@ on:
   push:
     branches:
       - main
+    # A human rollback of the generated release files must not immediately
+    # rebuild and republish the very version they are trying to withdraw.
+    paths-ignore:
+      - 'source.json'
+      - 'releases/**'
+      - 'service/prebuilt/*.elf'
   pull_request:
   workflow_dispatch:
 
