@@ -12,6 +12,8 @@ on:
       - 'source.json'
       - 'releases/**'
       - 'service/prebuilt/*.elf'
+      - '.github/workflows/prepare-poweroff.yml'
+      - 'tools/prepare_poweroff_fix.py'
   pull_request:
   workflow_dispatch:
 
@@ -54,38 +56,29 @@ jobs:
           PS5_PAYLOAD_SDK: ${{ runner.temp }}/ps5sdk/ps5-payload-sdk
         run: |
           set -euo pipefail
-          make -C service all BUILD="$RUNNER_TEMP/ps5-helper-build"
-          helper_version="$(python3 - <<'PY'
-          import re
-          from pathlib import Path
-          s=Path('service/payload/padd.c').read_text()
-          m=re.search(r'^#define PADD_VERSION\s+0x([0-9A-Fa-f]+)\s*$',s,re.M)
-          if not m: raise SystemExit('No PADD_VERSION')
-          n=int(m.group(1),16)
-          print(f'{n >> 8}.{n & 255}')
-          PY
-          )"
+          python3 tools/check_poweroff_scope.py
+          cc -std=c11 -Wall -Wextra -Werror app/test_poweroff.c -o "$RUNNER_TEMP/test-power-policy"
+          "$RUNNER_TEMP/test-power-policy"
+          cc -std=c11 -Wall -Wextra -Werror -DQP_POWER_TEST service/poweroff/main.c service/poweroff/test.c -o "$RUNNER_TEMP/test-power-api"
+          "$RUNNER_TEMP/test-power-api"
           mkdir -p dist
-          cp "$RUNNER_TEMP/ps5-helper-build/padd-controller.elf" "dist/padd-controller-$helper_version.elf"
-          python3 - "$helper_version" <<'PY'
+          # Reuse the EXACT .13 controller helper. Only the one-shot shutdown ELF is new.
+          echo "d14cd155fab7712e0ad4ec8cbd890db988426261fa6632e2399d9477c6f7418a  service/prebuilt/padd-controller-2.7.elf" | sha256sum --check
+          cp service/prebuilt/padd-controller-2.7.elf dist/
+          "$PS5_PAYLOAD_SDK/bin/prospero-clang" -std=c11 -Wall -Wextra -Werror -O1 -o dist/ps5pad-poweroff-1.0.elf service/poweroff/main.c -lSceSystemService
+          python3 - <<'PY'
           from pathlib import Path
-          import struct,sys
-          p=Path(f'dist/padd-controller-{sys.argv[1]}.elf')
-          elf=p.read_bytes()
-          assert len(elf)>4096 and elf[:4]==b'\x7fELF'
-          assert elf[4]==2 and elf[5]==1 and struct.unpack_from('<H',elf,18)[0]==62
-          # Only a source/binary sanity check: hardware behavior remains untested.
-          if sys.argv[1]=='2.8':
-              s=Path('service/payload/system_ps5.c').read_text()
-              assert 'int system_power_off(void) { return sceSystemStateMgrTurnOff(); }' in s
-          print(f'PS5 helper {sys.argv[1]} ELF format verified; no console commands.')
+          import struct
+          p=Path('dist/ps5pad-poweroff-1.0.elf').read_bytes()
+          assert len(p)>=64 and p[:6]==b'\x7fELF\x02\x01' and struct.unpack_from('<H',p,18)[0]==62
+          print('Dedicated shutdown ELF format verified; no console commands were run.')
           PY
-          sha256sum "dist/padd-controller-$helper_version.elf"
+          sha256sum dist/*.elf
       - name: Upload verified ELF
         uses: actions/upload-artifact@v4
         with:
           name: ps5-pad-helper
-          path: dist/padd-controller-*.elf
+          path: dist/*.elf
           if-no-files-found: error
           retention-days: 30
 
@@ -192,6 +185,9 @@ jobs:
                     if hashlib.sha256(p.read_bytes()).hexdigest()==report['service_sha256']]
           assert len(matching)==1
           shutil.copy2(matching[0],Path('staged/service/prebuilt')/matching[0].name)
+          power=Path('service/prebuilt/ps5pad-poweroff-1.0.elf')
+          assert hashlib.sha256(power.read_bytes()).hexdigest()==report['poweroff_sha256']
+          shutil.copy2(power,Path('staged/service/prebuilt')/power.name)
           PY
       - name: Upload release set verified in both PRs and main
         uses: actions/upload-artifact@v4
@@ -226,7 +222,7 @@ jobs:
           report="releases/$version/PS5-Pad-$version-verification.json"
           test -s "$ipa" && test -s "$report"
           python3 tools/prepare_source.py --ipa "$ipa" --report "$report" --check
-          git add -- source.json "releases/$version" service/prebuilt/padd-controller-*.elf
+          git add -- source.json "releases/$version" service/prebuilt/padd-controller-*.elf service/prebuilt/ps5pad-poweroff-*.elf
           if git diff --cached --quiet; then
             echo 'No new release bytes: published version already matches.'
             exit 0

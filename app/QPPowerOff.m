@@ -45,7 +45,14 @@
              * initialize a controller, or retry an ambiguous transfer. */
             nw_connection_send(socket,data,NW_CONNECTION_FINAL_MESSAGE_CONTEXT,true,^(nw_error_t sendError){
                 if(generation!=self->_generation||!self->_attempt.active||self->_socket!=socket)return;
-                [self finish:sendError?@"Shutdown result unknown. Check the PS5; the command was not retried.":@"Full-power-off request sent. Check that the PS5 turns fully off, not into Rest Mode. It was not retried."];
+                if(sendError) {
+                    [self finish:@"Shutdown result unknown. Check the PS5; the command was not retried."];return;
+                }
+                /* Preserve .13's half-second post-transfer drain before cancellation. */
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+                    if(generation!=self->_generation||!self->_attempt.active||self->_socket!=socket)return;
+                    [self finish:@"Full-power-off request sent. Check that the PS5 turns fully off, not into Rest Mode. It was not retried."];
+                });
             });
         } else if(state==nw_connection_state_failed || (state==nw_connection_state_waiting&&error)) {
             [self finish:self->_attempt.sent?@"Shutdown result unknown. Check the PS5; the command was not retried.":@"Cannot reach the PS5 ELF loader on port 9021. No shutdown command was sent. Start the ELF loader and try again."];
