@@ -21,6 +21,9 @@
     NSUInteger _generation;
     BOOL _dirty, _tcpReady, _connectBlocked;
     NSTimeInterval _connectTimeout;
+    uint32_t _appStateToken;
+    BOOL _appStateWaiting;
+    NSTimeInterval _appStateRequestAt,_appStateUpdated;
     uint8_t _controlType;
     NSData *_controlPayload;
     NSString *_keyboardDesired,*_keyboardSent,*_keyboardInFlight;
@@ -36,6 +39,8 @@
 }
 @property(nonatomic,readwrite) BOOL supportsLiveKeyboard,keyboardConnected,keyboardActive,keyboardClosing;
 @property(nonatomic,readwrite,copy) NSString *keyboardMessage;
+@property(nonatomic,readwrite) BOOL supportsAppState,kodiRunningKnown,kodiRunning,kodiFocused;
+@property(nonatomic,readwrite,copy) NSString *focusedTitle;
 @property(nonatomic,readwrite) BOOL ready;
 @property(nonatomic,readwrite) QPConnectionFailure failureKind;
 @property(nonatomic,readwrite) BOOL controllerChecked;
@@ -64,6 +69,7 @@
 - (void)publish {
     NSDictionary *record=@{@"app":@"PS5 Pad", @"version":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"0.1.2", @"host":_host?:@"",
         @"port":@9305, @"ready":@(_ready), @"connecting":@(_connecting), @"message":_message?:@"",
+        @"app_state_fresh":@(self.appStateFresh),@"kodi_running_known":@(_kodiRunningKnown),@"kodi_running":@(_kodiRunning),@"kodi_focused":@(_kodiFocused),@"focused_title":_focusedTitle?:@"",
         @"pad_ready":@(_padReady), @"profile_assigned":@(_profileAssigned), @"waiting_for_profile":@(_waitingForProfile), @"ownership_monitor_ready":@(_monitorReady), @"connection_failure":@(_failureKind), @"controller_checked":@(_controllerChecked),
         @"pad_handle":@(_padHandle), @"latency_ms":@(_latency), @"last_ack":@(_lastAck),
         @"server_report_failures":@(_failures), @"transport":@"direct TCP",
@@ -83,6 +89,7 @@
     if (_changed) _changed();
 }
 - (void)readOwnershipFlags:(uint32_t)flags {
+    _supportsAppState=(flags&QP_CAP_APP_STATE)!=0;
     _supportsTextInput=(flags&QP_CAP_TEXT_INPUT)!=0;
     _supportsLiveKeyboard=(flags&QP_CAP_LIVE_KEYBOARD)!=0;
     _supportsOwnership=(flags&QP_CAP_OWNERSHIP)!=0;
@@ -105,6 +112,8 @@
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
     _controlPayload=nil; _supportsTextInput=NO;
+    _supportsAppState=_kodiRunningKnown=_kodiRunning=_kodiFocused=_appStateWaiting=NO;
+    _appStateRequestAt=_appStateUpdated=0;_focusedTitle=nil;
     _supportsLiveKeyboard=_keyboardConnected=_keyboardActive=_keyboardClosing=NO;
     _keyboardDesired=_keyboardSent=_keyboardInFlight=nil; _keyboardExit=_keyboardEnter=NO;
     _keyboardMessage=@"Keyboard disconnected";
@@ -188,6 +197,12 @@
                 [self sendData:[NSData dataWithBytes:lease length:sizeof lease]];self->_keyboardLastLease=now;
             }
             [self pumpKeyboard];
+            if(self.supportsAppState) {
+                if(self->_appStateWaiting && now-self->_appStateRequestAt>2) {
+                    self->_appStateWaiting=NO;self->_appStateUpdated=0;self.kodiRunningKnown=NO;self.kodiFocused=NO;[self publish];
+                }
+                if(!self->_appStateWaiting && now-self->_appStateRequestAt>=0.75) [self requestAppState];
+            }
         } else if(now-self->_started>self->_connectTimeout) {
             BOOL unavailable=[self serviceUnavailableForError:nil deadline:YES];
             [self failConnection:@"Connection timed out. Use ••• to retry." unavailable:unavailable];
@@ -286,7 +301,7 @@
             _supportsDisconnectController=qp_supports_disconnect(qp_u16(p+2),qp_u32(p+12));
             _padReady=(qp_u32(p+12)&1)!=0 && _padHandle>=0;
             _message=@"PS5 Pad service connected."; _lastPong=[self now]; _dirty=YES;
-            [self flush]; [self ping]; [self checkController]; [self publish];
+            [self flush]; [self ping]; [self checkController]; [self requestAppState]; [self publish];
         } else if(kind==QP_ACK && length==8 && _ready) {
             uint32_t seq=qp_u32(p); int32_t status=(int32_t)qp_u32(p+4);
             BOOL current=qp_feedback_ack_is_current(&_feedbackGate,_sentFeedbackEpoch,_inflight,seq,status);
@@ -312,6 +327,15 @@
             _padReady=reportedReady;
             if(lostPad) [self releaseControls];
             if(!_controlBusy) _message=[self controllerMessage];
+            [self publish];
+        } else if(kind==QP_APP_STATE && length==32 && _ready) {
+            if(!_appStateWaiting || qp_u32(p)!=_appStateToken)continue;
+            _appStateWaiting=NO;_appStateUpdated=[self now];
+            uint32_t flags=qp_u32(p+8);
+            _kodiRunningKnown=(flags&1)!=0;_kodiRunning=_kodiRunningKnown&&(flags&2)!=0;
+            _kodiFocused=qp_u32(p+4)==0&&(flags&4)!=0&&(flags&8)!=0&&_kodiRunning;
+            _focusedTitle=[[NSString alloc] initWithBytes:p+20 length:strnlen((const char *)p+20,12) encoding:NSASCIIStringEncoding]?:@"";
+            if(_kodiFocused&&![_focusedTitle isEqualToString:@"PPSA99420"])_kodiFocused=NO;
             [self publish];
         } else if(kind==QP_LIVE_KEYBOARD && length==8 && _ready) {
             if(!_controlSent || _controlType!=kind) { [self failConnection:@"Unexpected keyboard response." unavailable:NO]; return; }
@@ -420,6 +444,12 @@
     [self invalidateInputFeedback];
     _disconnectRequested=YES; _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _message=@"Disconnecting controller…"; [self tryDisconnectController]; [self publish];
+}
+- (BOOL)appStateFresh {return _ready&&_appStateUpdated>0&&[self now]-_appStateUpdated<2.5;}
+- (void)requestAppState {
+    if(!_ready||!_supportsAppState||_appStateWaiting)return;
+    uint8_t frame[12];qp_header(frame,QP_APP_STATE,4);qp_put32(frame+8,++_appStateToken);
+    _appStateWaiting=YES;_appStateRequestAt=[self now];[self sendData:[NSData dataWithBytes:frame length:sizeof frame]];
 }
 - (void)sendKeyboardOp:(uint8_t)op payload:(NSData *)payload {
     _keyboardOp=op;_controlPayload=payload;[self control:QP_LIVE_KEYBOARD];

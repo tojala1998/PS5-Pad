@@ -22,6 +22,7 @@ int system_launch_vlc(void);
 int system_kodi_installed(void);
 int system_launch_kodi(void);
 
+void system_app_state(struct qp_app_state *state);
 void system_shutdown(void);
 
 #endif

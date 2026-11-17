@@ -8,6 +8,8 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 /* A matching successful controller-report ACK, not proof of app/profile routing. */
 @property(nonatomic,copy) void (^inputAcknowledged)(uint32_t buttons);
 @property(nonatomic,copy) void (^inputFeedbackReset)(void);
+@property(nonatomic,readonly) BOOL supportsAppState,appStateFresh,kodiRunningKnown,kodiRunning,kodiFocused;
+@property(nonatomic,readonly,copy) NSString *focusedTitle;
 @property(nonatomic,readonly) BOOL ready;
 @property(nonatomic,readonly) QPConnectionFailure failureKind;
 @property(nonatomic,readonly) BOOL controllerChecked;

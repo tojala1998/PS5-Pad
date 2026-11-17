@@ -31,7 +31,7 @@
 #include "text_input.h"
 #include "live_keyboard.h"
 
-#define PADD_VERSION 0x0205
+#define PADD_VERSION 0x0206
 #define PAD_DETACH_SETTLE_MS 180u
 #define PAD_NEUTRAL_WARMUP_MS 200u
 
@@ -184,7 +184,7 @@ static void drop_client(struct daemon *d, const char *reason) {
 
 static uint32_t flags(const struct daemon *d) {
     return (d->pad.ready ? PMCP_FLAG_PAD_READY : 0) | PMCP_FLAG_TOUCH_UNMAPPED |
-        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER | QP_FLAG_TEXT_INPUT | QP_FLAG_LIVE_KEYBOARD |
+        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER | QP_FLAG_TEXT_INPUT | QP_FLAG_LIVE_KEYBOARD | QP_FLAG_APP_STATE |
         (d->ownership.enabled ? QP_FLAG_OWNERSHIP : 0) |
         (d->ownership.enabled && d->ownership.synced ? QP_FLAG_MONITOR_READY : 0) |
         (d->profile_assigned ? QP_FLAG_PROFILE_ASSIGNED : 0) |
@@ -309,6 +309,11 @@ static void ownership_event(void *context,struct owner_event e) {
 
 static void handle_message(struct daemon *d, uint8_t type, const uint8_t *payload, uint16_t length) {
     switch (type) {
+    case QP_APP_STATE: {
+        if(length!=4){send_error(d,PMCP_ERR_BAD_LENGTH,"APP_STATE requires a token");return;}
+        struct qp_app_state state={0};memcpy(&state.token,payload,4);
+        system_app_state(&state);send_message(d,type,&state,sizeof state);return;
+    }
     case QP_KEYBOARD_LEASE:
         if(length==1 && payload[0]==1) {live_cancel(&d->keyboard,ECANCELED);return;}
         if(length) {send_error(d,PMCP_ERR_BAD_LENGTH,"lease must be empty");return;}

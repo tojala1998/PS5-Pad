@@ -28,6 +28,7 @@ enum pmcp_type {
     PMCP_GET_USER = 9,  /* no request payload; reply: struct pmcp_user (requires PMCP_FLAG_USER_NAME) */
     PMCP_GET_USERS = 10, /* no request payload; reply: struct pmcp_users (requires PMCP_FLAG_USERS) */
     PMCP_GET_PADS = 11, /* no request payload; reply: struct pmcp_pads (requires PMCP_FLAG_PADS) */
+    QP_APP_STATE = 136, /* u32 token; qp_app_state response, read-only */
     QP_LIVE_KEYBOARD = 134, /* op 0 open,1 edit(u16 backspaces + ASCII),2 close,3 Enter+close; i32 status,u32 opened */
     QP_KEYBOARD_LEASE = 135, /* empty renews editor lease; byte 1 cancels queued keys immediately; no direct reply */
     QP_TYPE_TEXT = 133, /* 1..128 printable ASCII bytes; reply i32 status,u32 characters */
@@ -128,7 +129,14 @@ struct pmcp_command {           /* 4 + 4 + 32 bytes */
     uint32_t op;                /* PMCP_CMD_* */
     char arg[32];               /* NUL-terminated, e.g. a title id */
 };
+struct qp_app_state { uint32_t token; int32_t status; uint32_t flags; int32_t focused_app, kodi_app; char focused_title[12]; };
 #pragma pack(pop)
+#define QP_APP_RUNNING_KNOWN 1u
+#define QP_APP_KODI_RUNNING 2u
+#define QP_APP_FOCUS_KNOWN 4u
+#define QP_APP_KODI_FOCUSED 8u
+#define QP_FLAG_APP_STATE 0x2000000
+
 
 #define PMCP_FLAG_PAD_READY       0x1
 #define QP_FLAG_CONTROLS          0x10000

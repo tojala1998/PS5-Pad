@@ -1,0 +1,36 @@
+PS5 Pad 0.4.10 (build 16), helper 2.6
+
+Silent Kodi media profile
+The helper now reports whether Kodi is running separately from the app with
+input focus. PS5 Pad checks immediately on connect and every 750 ms afterward.
+Media controls enable only with fresh, confirmed Kodi focus and an initialized
+controller assigned to a profile. Home, other apps, unknown/stale state and
+connection loss disable and grey out the media buttons. No profile-change popup
+is shown. Kodi retains the established chapter, seek and Play/Pause mappings.
+VLC is no longer part of the interface; no other media mappings are guessed.
+
+Kodi shortcut
+The Kodi icon fades/shrinks away when Kodi is confirmed running, including when
+Home has focus over it. It pops back when Kodi is confirmed no longer running.
+Unknown/offline state does not invent a launch/exit animation; the last icon
+presentation is retained, disabled. A cold launch keeps it hidden until the first
+valid state arrives. Reconnecting always rechecks current state before enabling
+media or the shortcut, then animates any change that happened while disconnected.
+Animations use generation checks so rapid changes cannot leave the icon hidden
+by an old completion handler. The icon remains in its own fixed layout slot.
+
+Verification
+Read-only probes on firmware 13.60 identified Kodi as PPSA99420. With the owner
+confirming PS5 Home while Kodi remained running, the running Kodi id stayed the
+same while the focused title changed to NPXS40087. Both states are distinct.
+The new app/service integration and icon animations await on-phone confirmation.
+No apps were launched, closed or switched by the detection tests, and no
+controller input or ownership changes were used to detect application state.
+
+Technical notes
+APP_STATE is a capability-gated read-only request with a matching token and
+separate known/running/focus flags. Missing replies invalidate state; delayed
+responses to earlier requests and earlier network generations cannot restore it.
+The PS5 APIs are read-only GetAppId / GetAppFocusedAppStatus / GetAppTitleId.
+The focused status uses its first 32 bits as app id on 13.60; a generously sized
+buffer accommodates the larger native response. Query errors fail closed.

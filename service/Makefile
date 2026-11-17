@@ -23,3 +23,4 @@ check: $(BUILD)/padd-host
 	python3 ownership_test.py "$(BUILD)/padd-host"
 	python3 text_input_test.py "$(BUILD)/padd-host"
 	python3 live_keyboard_test.py "$(BUILD)/padd-host"
+	python3 app_state_test.py "$(BUILD)/padd-host"

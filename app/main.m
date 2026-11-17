@@ -303,7 +303,8 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic,strong) NSMutableArray<UIButton *> *mediaButtons;
 @property(nonatomic,copy) NSString *host;
 @property(nonatomic) uint32_t pulseMask;
-@property(nonatomic) NSUInteger pulseGeneration;
+@property(nonatomic) NSUInteger pulseGeneration,kodiIconGeneration;
+@property(nonatomic) BOOL kodiIconStateKnown,kodiIconHidden,mediaWasActive;
 @property(nonatomic) BOOL wantsConnection;
 @property(nonatomic) BOOL didOfferSetup;
 @property(nonatomic) BOOL needsInitializePrompt,initializePromptScheduled;
@@ -388,6 +389,7 @@ static void Round(UIView *view,CGFloat radius) {
     UIImage *buttonLogo=[UIImage imageWithCGImage:logo.CGImage scale:logo.size.width/24.0 orientation:UIImageOrientationUp];
     [_appsButton setImage:[buttonLogo imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal] forState:UIControlStateNormal];
     _appsButton.imageView.contentMode=UIViewContentModeScaleAspectFit;
+    _appsButton.alpha=0;_appsButton.enabled=NO;_appsButton.accessibilityElementsHidden=YES;
     _moreButton=[self symbol:@"ellipsis" label:@"Console connection" action:@selector(showConnection)];
     for(UIButton *button in @[_appsButton,_moreButton]) { button.backgroundColor=Color(0x25282A); Round(button,11); button.layer.borderWidth=0; }
     _titleLabel=Label(@"PS5 Pad",14,UIFontWeightSemibold,UIColor.whiteColor);
@@ -424,7 +426,7 @@ static void Round(UIView *view,CGFloat radius) {
     [super viewDidLayoutSubviews]; UIEdgeInsets safe=self.view.safeAreaInsets;
     CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height-safe.top-safe.bottom;
     _canvas.frame=CGRectMake(0,safe.top,w,h);
-    _appsButton.frame=CGRectMake(16,12,44,40); _moreButton.frame=CGRectMake(w-60,12,44,40);
+    _appsButton.bounds=CGRectMake(0,0,44,40);_appsButton.center=CGPointMake(38,32); _moreButton.frame=CGRectMake(w-60,12,44,40);
     _titleLabel.frame=CGRectMake(66,12,w-132,22); _statusLabel.frame=CGRectMake(66,34,w-132,20);
     _consoleButton.frame=CGRectMake(66,8,w-132,52);
     _buttons[0].frame=CGRectMake(7,82,48,48); _buttons[1].frame=CGRectMake(w*.29-24,82,48,48);
@@ -468,6 +470,21 @@ static void Round(UIView *view,CGFloat radius) {
     }
     _connectionBarBusy=busy; _connectionWasReady=ready;
 }
+- (void)updateKodiShortcut {
+    BOOL fresh=_link.appStateFresh&&_link.kodiRunningKnown;
+    _appsButton.enabled=fresh&&!_link.kodiRunning&&_link.kodiInstalled&&_link.profileAssigned&&!_link.controlBusy;
+    if(!fresh) { _appsButton.accessibilityElementsHidden=YES;return; }
+    BOOL hide=_link.kodiRunning;
+    if(_kodiIconStateKnown&&hide==_kodiIconHidden) { _appsButton.accessibilityElementsHidden=hide;return; }
+    _kodiIconStateKnown=YES;_kodiIconHidden=hide;NSUInteger generation=++_kodiIconGeneration;
+    _appsButton.accessibilityElementsHidden=hide;_appsButton.hidden=NO;
+    if(!hide&&_appsButton.alpha<0.01)_appsButton.transform=CGAffineTransformMakeScale(.65,.65);
+    [UIView animateWithDuration:hide?.22:.32 delay:0 usingSpringWithDamping:hide?1:.72 initialSpringVelocity:0
+        options:UIViewAnimationOptionBeginFromCurrentState|UIViewAnimationOptionAllowUserInteraction animations:^{
+            self.appsButton.alpha=hide?0:1;
+            self.appsButton.transform=hide?CGAffineTransformMakeScale(.65,.65):CGAffineTransformIdentity;
+        } completion:^(BOOL finished){(void)finished;if(generation==self.kodiIconGeneration)self.appsButton.hidden=hide;}];
+}
 - (void)refresh {
     if(_ensureSession.active && _link.ready) [self cancelEnsureSession];
     if(_initialization.phase==QP_INIT_DONE && (!_link.ready || !_link.padReady)) { qp_initialization_cancel(&_initialization); _showingLinkProgress=YES; }
@@ -489,7 +506,11 @@ static void Round(UIView *view,CGFloat radius) {
     BOOL active=_wantsConnection&&_link.ready&&_link.padReady&&!_link.controlBusy&&!_link.disconnectingController&&!pending; _swipe.active=active;
     for(QPButton *button in _buttons) { BOOL allowed=active&&(!_link.waitingForProfile || !(button.mask&~0x60F0u)); button.enabled=allowed; button.alpha=allowed?1:.35; if(!allowed) [button clear]; }
     if(!active) { _pulseMask=0; _pulseGeneration++; }
-    for(UIButton *button in _mediaButtons) { button.enabled=active&&!_link.waitingForProfile; button.alpha=button.enabled?1:.3; }
+    BOOL mediaActive=active&&_link.profileAssigned&&_link.appStateFresh&&_link.kodiFocused;
+    BOOL lostMedia=_mediaWasActive&&!mediaActive;_mediaWasActive=mediaActive;
+    if(lostMedia) [self clearControls];
+    for(UIButton *button in _mediaButtons) {button.enabled=mediaActive;button.alpha=mediaActive?1:.3;}
+    [self updateKodiShortcut];
     UIApplication.sharedApplication.idleTimerDisabled=NO;
     [self offerInitializationIfReady];
     NSDictionary *record=@{@"session_id":_sessionIdentifier?:@"",@"process_id":@(NSProcessInfo.processInfo.processIdentifier),
@@ -629,16 +650,18 @@ static void Round(UIView *view,CGFloat radius) {
     });
 }
 - (void)mediaAction:(UIButton *)button {
-    if(!_link.ready||!_link.padReady||_link.controlBusy) return;
+    if(!button.enabled||!_link.ready||!_link.padReady||!_link.profileAssigned||_link.controlBusy||!_link.appStateFresh||!_link.kodiFocused) return;
     if(button.tag<0||button.tag>4) return;
     [self pulse:qp_kodi_action((unsigned)button.tag)];
     _result.text=@[@"Previous chapter",@"Seek backward",@"Play / Pause",@"Seek forward",@"Next chapter"][button.tag];
 }
 - (void)showApps {
+    if(!_link.appStateFresh||!_link.kodiRunningKnown||_link.kodiRunning)return;
     [self clearControls];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Kodi" message:@"Open Kodi on your PS5. This may interrupt another app's playback." preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *action=[UIAlertAction actionWithTitle:@"Open Kodi" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        (void)a; self.result.text=@"Opening Kodi…"; [self.link launchKodi];
+        (void)a; if(!self.link.appStateFresh||!self.link.kodiRunningKnown||self.link.kodiRunning)return;
+        self.result.text=@"Opening Kodi…"; [self.link launchKodi];
     }];
     action.enabled=_link.ready&&_link.supportsControl&&!_link.controlBusy&&_link.kodiInstalled&&(!_link.supportsOwnership||_link.profileAssigned);
     [sheet addAction:action];

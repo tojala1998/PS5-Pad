@@ -143,3 +143,14 @@ int system_vlc_installed(void) { return 1; }
 int system_launch_vlc(void) { emit("{\"call\":\"launch_vlc\"}\n"); return 0; }
 int system_kodi_installed(void) { return 1; }
 int system_launch_kodi(void) { emit("{\"call\":\"launch_kodi\"}\n"); return 0; }
+
+void system_app_state(struct qp_app_state *out) {
+    out->flags=0;out->status=EIO;out->focused_app=out->kodi_app=-1;
+    memset(out->focused_title,0,sizeof out->focused_title);
+    const char *path=getenv("PADD_TEST_APP_STATE_FILE");if(!path)return;
+    FILE *f=fopen(path,"r");if(!f)return;char state[32]={0};(void)fgets(state,sizeof state,f);fclose(f);
+    if(!strcmp(state,"unknown"))return;
+    out->status=0;out->flags=QP_APP_RUNNING_KNOWN|QP_APP_FOCUS_KNOWN;
+    if(!strcmp(state,"kodi") || !strcmp(state,"home")) {out->kodi_app=123;out->flags|=QP_APP_KODI_RUNNING;}
+    if(!strcmp(state,"kodi")){out->focused_app=123;out->flags|=QP_APP_KODI_FOCUSED;strcpy(out->focused_title,"PPSA99420");}
+}

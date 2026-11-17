@@ -150,3 +150,31 @@ void system_shutdown(void) {
     if (user_service_ready) sceUserServiceTerminate();
     user_service_ready = 0;
 }
+
+/* Read-only title/focus queries. The focused-status buffer is deliberately 256
+ * bytes: public bindings disagree on 16 vs 64 bytes. On 13.60 the app id is the
+ * first u32 (the next u32 is status, not the high half of a 64-bit id).
+ * No focus setter, launch, suspend or controller operation is used here. */
+int sceLncUtilInitialize(void);
+int sceSystemServiceGetAppId(const char *title);
+int sceSystemServiceGetAppFocusedAppStatus(void *status);
+int sceLncUtilGetAppTitleId(uint32_t app,char *title);
+void system_app_state(struct qp_app_state *out) {
+    static int initialized;
+    out->flags=0;out->focused_app=-1;out->kodi_app=-1;memset(out->focused_title,0,sizeof out->focused_title);
+    if(!initialized) {int rc=sceLncUtilInitialize();if(rc){out->status=rc;return;}initialized=1;}
+    int kodi=sceSystemServiceGetAppId("PPSA99420");
+    if(kodi>=0 || kodi==-1) {out->flags|=QP_APP_RUNNING_KNOWN;out->kodi_app=kodi;if(kodi>=0)out->flags|=QP_APP_KODI_RUNNING;}
+    uint32_t focus[64]={0};int rc=sceSystemServiceGetAppFocusedAppStatus(focus);
+    out->status=rc;
+    if((uint32_t)rc==0x80A10009u) {out->flags|=QP_APP_FOCUS_KNOWN;out->status=0;return;}
+    if(rc)return;
+    if(!focus[0] || focus[0]>0x7fffffffu) {out->status=EPROTO;return;}
+    char title[256]={0};rc=sceLncUtilGetAppTitleId(focus[0],title);
+    if(rc){out->status=rc;return;}
+    for(int i=0;i<9;i++) if(!((title[i]>='A'&&title[i]<='Z')||(title[i]>='0'&&title[i]<='9'))) {out->status=EPROTO;return;}
+    if(title[9]) {out->status=EPROTO;return;}
+    out->focused_app=(int32_t)focus[0];out->flags|=QP_APP_FOCUS_KNOWN;
+    memcpy(out->focused_title,title,9);
+    if(!strcmp(title,"PPSA99420") && kodi==(int)focus[0]) out->flags|=QP_APP_KODI_FOCUSED;
+}

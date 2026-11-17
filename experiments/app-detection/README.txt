@@ -32,3 +32,17 @@ Public implementation reference (query calls only):
 https://github.com/itsPLK/ps5-payload-manager/blob/main/src/ps5_launcher.c
 SDK exported function names:
 https://github.com/john-tornblom/ps5-payload-sdk/blob/master/sce_stubs/libSceSystemService.c
+
+Focus follow-up and 0.4.10 integration
+The read-only focused-status API was also verified on 13.60. Its first u32 is
+app id; the following u32 is not part of a 64-bit identifier. With Kodi visible,
+the id matches PPSA99420. With Home visible and Kodi still running (owner
+confirmed), focus resolves to NPXS40087 while Kodi's running id stays unchanged.
+The integrated helper 2.6 also confirmed this Home/Kodi-background distinction.
+PS5 Pad 0.4.10 now uses separate running and focus flags to drive the shortcut
+and media controls. Unknown/stale data does not enable media input.
+
+Signature reference (the actual app-id width was verified on this console):
+https://github.com/SvenGDK/SharpProspero/blob/5dfdb4b0b166e83dc9ae275001afb695f12c7174/src/SharpProspero/Interop/SystemService/SystemService.cs
+Native output-size reference:
+https://github.com/boykopovar/AnyPS5/blob/521fb7fec400e4467838f6bb0409efbfa80df2dc/docs/dev/debt/libSceSystemService.md
