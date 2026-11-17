@@ -1,5 +1,8 @@
 # Working boundaries
 
+- Every publicly shipped helper must preserve the frozen PMCP v1 management/Stop contract in docs/helper-lifecycle-contract.md. New app versions must be able to stop old public helpers without depending on their input/media features. Keep service/stop_contract_test.py's literal wire fixtures unchanged; adapt new implementations to pass them. Run this contract before publication and bump helper versions when their behavior changes.
+- Prefer app-managed helper startup/replacement. Do not manually deploy through Payload Manager as the routine update workflow. The user corrected this after the one-time 2.1-to-2.7 recovery on 2026-11-17.
+
 - Use uhnmeyker for app identifiers; tojala1998 is the GitHub account only.
 - Do not automate the iPhone interface with screenshots or taps. Hand UI-only steps to the user and wait for confirmation, then verify through USB/command-line tools.
 

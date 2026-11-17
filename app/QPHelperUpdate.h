@@ -11,7 +11,13 @@ static inline bool qp_helper_needs_replacement(uint16_t version) {
     return version != QP_BUNDLED_HELPER_VERSION;
 }
 static inline bool qp_helper_can_update(uint16_t version,uint32_t flags) {
-    return qp_helper_needs_replacement(version) && qp_supports_disconnect(version,flags);
+    /* Public 2.x helpers and future releases retain PMCP v1 management/STOP.
+     * Do not require unrelated controller commands to replace a helper. */
+    return qp_helper_needs_replacement(version) && version>=0x0200 && (flags&QP_CAP_CONTROL);
+}
+static inline QPHelperUpdate qp_helper_update_begin(uint16_t version,uint32_t flags) {
+    if(!qp_helper_can_update(version,flags))return QP_UPDATE_FAILED;
+    return qp_supports_disconnect(version,flags)?QP_UPDATE_DETACH:QP_UPDATE_STOP;
 }
 static inline bool qp_helper_update_reply(QPHelperUpdate *phase,uint8_t kind,const uint8_t *body,size_t length) {
     if(*phase==QP_UPDATE_DETACH && kind==QP_DISCONNECT_CONTROLLER && length==32 && qp_disconnect_response_valid(body)) {

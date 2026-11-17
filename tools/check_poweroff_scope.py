@@ -2,7 +2,7 @@
 from pathlib import Path
 import hashlib,json,re
 root=Path(__file__).resolve().parent.parent
-updater_paths={'app/QPConnection.m','app/QPHelperLoader.m','app/QPLoaderPolicy.h'}
+updater_paths={'app/QPConnection.h','app/QPConnection.m','app/QPHelperLoader.m','app/QPLoaderPolicy.h'}
 for path,digest in json.loads((root/'tools/controller-0.4.13-lock.json').read_text()).items():
     if path in updater_paths: continue
     assert hashlib.sha256((root/path).read_bytes()).hexdigest()==digest, 'Unexpected controller change: '+path

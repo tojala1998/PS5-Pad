@@ -4,6 +4,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/app"
 SDK="${1:-${IOS_SDK:-$ROOT/work/ios-sdks/iPhoneOS16.5.sdk}}"
 test -f "$SDK/SDKSettings.plist" || { echo 'Set IOS_SDK to an iPhoneOS SDK directory.' >&2; exit 1; }
+# This frozen management protocol must survive every public helper revision.
+make -C "$ROOT/service" build/padd-host
+python3 "$ROOT/service/stop_contract_test.py" "$ROOT/service/build/padd-host"
 mkdir -p "$ROOT/work" "$ROOT/dist"
 BUILD="$(mktemp -d "$ROOT/work/ps5-pad-build.XXXXXXXX")"
 APP="$BUILD/Payload/PS5Pad.app"

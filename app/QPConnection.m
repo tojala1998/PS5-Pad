@@ -70,6 +70,7 @@
     return self;
 }
 - (NSTimeInterval)now { return NSProcessInfo.processInfo.systemUptime; }
+- (BOOL)loadingHelper { return _connecting && _helperLoader!=nil; }
 - (void)publish {
     NSDictionary *record=@{@"app":@"PS5 Pad", @"version":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"0.1.2", @"host":_host?:@"",
         @"port":@9305, @"service_version":_serviceVersion?:@"", @"ready":@(_ready), @"connecting":@(_connecting), @"message":_message?:@"",
@@ -308,7 +309,7 @@
              * The loader rechecks its own greeting before touching the helper. */
             if(qp_helper_needs_replacement(qp_u16(p+2))) {
                 if(!qp_helper_can_update(qp_u16(p+2),qp_u32(p+12))) {
-                    [self failConnection:@"This helper is too old for a safe automatic update. Restart it with the bundled ELF." unavailable:NO]; return;
+                    [self failConnection:@"This helper cannot confirm a safe automatic replacement. Restart it with the bundled ELF." unavailable:NO]; return;
                 }
                 [self loadServiceAt:[_host copy]]; return;
             }

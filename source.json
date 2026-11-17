@@ -19,6 +19,15 @@
       ],
       "versions": [
         {
+          "version": "0.4.19",
+          "buildVersion": "25",
+          "date": "2026-11-17",
+          "localizedDescription": "Fix automatic replacement of legacy helper 2.1, which was found running on the PS5 after its restart. That helper supports orderly STOP and controller cleanup, but predates the separate disconnect-controller command that 0.4.18 required. The old requirement prevented replacement before any stop command was sent.\n\nUse the permanent acknowledged STOP cleanup path even when separate controller removal is unavailable. Helpers advertising separate controller removal still confirm that step first. Both paths require a successful STOP acknowledgement, clean connection closure and a refused service connection before loading the bundled helper. Only an exact helper version match is reused. No console power commands or autoload settings are changed.\n\nFreeze the minimal PMCP v1 greeting and Stop interface for every future public helper. Literal-wire release tests now check shutdown with no controller and with held buttons, neutralization, owned-controller removal and listener closure. Future input/media protocols may change without breaking this management interface.\n\nShow the actual helper preparation stage and failure message instead of hiding them behind generic reconnect text. Bundled helper 2.7, controller ownership behavior and full Power Off are unchanged. Local policy, host socket and original-toolchain IPA checks passed; phone-driven replacement still needs owner confirmation.",
+          "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.19/PS5-Pad-0.4.19-unsigned.ipa",
+          "size": 180049,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.4.18",
           "buildVersion": "24",
           "date": "2026-11-17",
@@ -109,11 +118,11 @@
           "minOSVersion": "15.0"
         }
       ],
-      "version": "0.4.18",
+      "version": "0.4.19",
       "versionDate": "2026-11-17",
-      "versionDescription": "The app now uses its exact bundled helper version. A different running version is a replacement candidate whether it is older or newer; newer helpers are no longer assumed compatible. An exact match preserves the existing session.\n\nReplacement still requires the existing management protocol, confirmed release of PS5 Pad's virtual controller, acknowledged helper shutdown, clean connection closure and a refused service connection before loading. The newly loaded helper must report exactly the bundled version. Ambiguous failures stop the replacement instead of launching another helper.\n\nBundles the unchanged helper 2.7. Replacing a different helper ends its virtual-controller session and may require normal profile selection afterward. Full Power Off is unchanged. Built and tested locally with the original LLVM 18 / iPhoneOS 16.5 SDK toolchain; phone-driven replacement remains unverified.",
-      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.18/PS5-Pad-0.4.18-unsigned.ipa",
-      "size": 179769
+      "versionDescription": "Fix automatic replacement of legacy helper 2.1, which was found running on the PS5 after its restart. That helper supports orderly STOP and controller cleanup, but predates the separate disconnect-controller command that 0.4.18 required. The old requirement prevented replacement before any stop command was sent.\n\nUse the permanent acknowledged STOP cleanup path even when separate controller removal is unavailable. Helpers advertising separate controller removal still confirm that step first. Both paths require a successful STOP acknowledgement, clean connection closure and a refused service connection before loading the bundled helper. Only an exact helper version match is reused. No console power commands or autoload settings are changed.\n\nFreeze the minimal PMCP v1 greeting and Stop interface for every future public helper. Literal-wire release tests now check shutdown with no controller and with held buttons, neutralization, owned-controller removal and listener closure. Future input/media protocols may change without breaking this management interface.\n\nShow the actual helper preparation stage and failure message instead of hiding them behind generic reconnect text. Bundled helper 2.7, controller ownership behavior and full Power Off are unchanged. Local policy, host socket and original-toolchain IPA checks passed; phone-driven replacement still needs owner confirmation.",
+      "downloadURL": "https://raw.githubusercontent.com/tojala1998/PS5-Pad/main/releases/0.4.19/PS5-Pad-0.4.19-unsigned.ipa",
+      "size": 180049
     }
   ],
   "news": []

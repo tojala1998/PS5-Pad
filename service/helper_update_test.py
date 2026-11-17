@@ -5,6 +5,19 @@ import unittest
 from initialization_test import Listener, send, receive
 
 class HelperUpdateTests(unittest.TestCase):
+    def test_legacy_stop_path_removes_owned_pad_without_command_132(self):
+        d=Listener()
+        try:
+            self.assertEqual(d.request(129)[0],0)
+            handle=d.request(128)[4]
+            send(d.client,6)
+            kind,body=receive(d.client)
+            self.assertEqual((kind,struct.unpack('<Ii',body)),(4,(0,0)))
+            self.assertEqual(d.client.recv(1),b'')
+            self.assertEqual(d.process.wait(timeout=3),0)
+            self.assertEqual([e['handle'] for e in d.events('pad_remove')],[handle])
+        finally:d.close()
+
     def test_release_ack_eof_and_port_closed_before_replacement(self):
         d=Listener()
         try:

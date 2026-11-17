@@ -503,6 +503,8 @@ static void Round(UIView *view,CGFloat radius) {
     else if(progress) _result.text=progress;
     else if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
     else if(_showingLinkProgress) { _showingLinkProgress=NO; _result.text=_link.message; }
+    if(_link.loadingHelper) { _statusLabel.text=@"Preparing controller service…"; _result.text=_link.message; }
+    else if(_link.failureKind!=QPConnectionFailureNone) _result.text=_link.message;
     _initializeHint.hidden=_link.profileAssigned;
     [self updateConnectionIndicator];
     _consoleButton.accessibilityValue=_statusLabel.text; _consoleButton.enabled=!_link.disconnectingController&&!_ensureSession.active;

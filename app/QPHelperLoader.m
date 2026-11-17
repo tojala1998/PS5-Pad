@@ -133,10 +133,12 @@
         [self readUpdate:c];
     });
 }
-- (void)beginUpdate:(nw_connection_t)c {
-    _update=QP_UPDATE_DETACH;_hello=[NSMutableData new];
-    [self say:@"Updating helper · releasing controller…"];
-    [self sendUpdateCommand:QP_DISCONNECT_CONTROLLER socket:c];[self readUpdate:c];
+- (void)beginUpdate:(nw_connection_t)c version:(uint16_t)version flags:(uint32_t)flags {
+    _update=qp_helper_update_begin(version,flags);_hello=[NSMutableData new];
+    if(_update==QP_UPDATE_FAILED){[self finish:@"This helper cannot confirm a safe shutdown. No replacement was sent."];return;}
+    BOOL detach=_update==QP_UPDATE_DETACH;
+    [self say:detach?@"Updating helper · releasing controller…":@"Stopping legacy helper and releasing its controller…"];
+    [self sendUpdateCommand:detach?QP_DISCONNECT_CONTROLLER:6 socket:c];[self readUpdate:c];
     NSUInteger run=_runGeneration;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,12*NSEC_PER_SEC),dispatch_get_main_queue(),^{
         if(self->_active&&self->_runGeneration==run&&self->_update!=QP_UPDATE_NONE&& !self->_launched)
@@ -154,7 +156,7 @@
                 if(self->_update==QP_UPDATE_ABSENCE){[self waitForOldListener:c];return;}
                 if(!qp_helper_can_update(version,flags)){[self finish:@"This helper cannot be safely updated automatically. No replacement was sent."];return;}
                 [self record:@"mismatched_helper" state:version code:QP_BUNDLED_HELPER_VERSION];
-                [self beginUpdate:c];return;
+                [self beginUpdate:c version:version flags:flags];return;
             }
             self->_update=QP_UPDATE_NONE;
             nw_connection_cancel(c);self->_socket=nil;

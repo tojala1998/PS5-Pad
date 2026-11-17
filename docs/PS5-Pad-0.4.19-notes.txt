@@ -1,0 +1,7 @@
+Fix automatic replacement of legacy helper 2.1, which was found running on the PS5 after its restart. That helper supports orderly STOP and controller cleanup, but predates the separate disconnect-controller command that 0.4.18 required. The old requirement prevented replacement before any stop command was sent.
+
+Use the permanent acknowledged STOP cleanup path even when separate controller removal is unavailable. Helpers advertising separate controller removal still confirm that step first. Both paths require a successful STOP acknowledgement, clean connection closure and a refused service connection before loading the bundled helper. Only an exact helper version match is reused. No console power commands or autoload settings are changed.
+
+Freeze the minimal PMCP v1 greeting and Stop interface for every future public helper. Literal-wire release tests now check shutdown with no controller and with held buttons, neutralization, owned-controller removal and listener closure. Future input/media protocols may change without breaking this management interface.
+
+Show the actual helper preparation stage and failure message instead of hiding them behind generic reconnect text. Bundled helper 2.7, controller ownership behavior and full Power Off are unchanged. Local policy, host socket and original-toolchain IPA checks passed; phone-driven replacement still needs owner confirmation.

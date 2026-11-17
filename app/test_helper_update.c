@@ -8,8 +8,20 @@ int main(void) {
     assert(qp_helper_can_update(QP_BUNDLED_HELPER_VERSION-1,flags));
     assert(!qp_helper_can_update(QP_BUNDLED_HELPER_VERSION,flags));
     assert(qp_helper_can_update(QP_BUNDLED_HELPER_VERSION+1,flags));
-    assert(!qp_helper_can_update(0x0202,flags));
-    assert(!qp_helper_can_update(0x0206,QP_CAP_CONTROL));
+    assert(qp_helper_can_update(0x0202,flags));
+    assert(qp_helper_can_update(0x0206,QP_CAP_CONTROL));
+    assert(!qp_helper_can_update(0x0100,QP_CAP_CONTROL));
+    assert(qp_helper_update_begin(0x0701,QP_CAP_CONTROL)==QP_UPDATE_STOP);
+    assert(qp_helper_can_update(0x0201,QP_CAP_CONTROL));
+    assert(!qp_helper_can_update(0x0201,0));
+    assert(qp_helper_update_begin(0x0201,QP_CAP_CONTROL)==QP_UPDATE_STOP);
+    assert(qp_helper_update_begin(0x0206,flags)==QP_UPDATE_DETACH);
+    assert(qp_helper_update_begin(QP_BUNDLED_HELPER_VERSION,flags)==QP_UPDATE_FAILED);
+    QPHelperUpdate legacy=qp_helper_update_begin(0x0201,QP_CAP_CONTROL);
+    uint8_t legacyAck[8]={0};
+    assert(qp_helper_update_reply(&legacy,QP_ACK,legacyAck,8));
+    assert(qp_helper_update_eof(&legacy,true,false));
+    assert(qp_helper_replacement_allowed(legacy,false,false,true));
     QPHelperUpdate phase=QP_UPDATE_DETACH;
     uint8_t status[32]={0};qp_put32(status+16,UINT32_MAX);
     assert(qp_helper_update_reply(&phase,QP_DISCONNECT_CONTROLLER,status,32));
@@ -49,5 +61,5 @@ int main(void) {
     hello[10]=(QP_BUNDLED_HELPER_VERSION+1)&255;hello[11]=(QP_BUNDLED_HELPER_VERSION+1)>>8;
     assert(qp_loader_hello_valid(hello,28,false));
     assert(!qp_loader_hello_valid(hello,28,true)); /* newer is also the wrong replacement */
-    puts("PASS: old/current/new versions, confirmed detach-stop-EOF-refusal ordering, failures, and post-load version verification.");
+    puts("PASS: exact versions, legacy 2.1 STOP cleanup, detach-stop-EOF-refusal ordering, failures, and post-load verification.");
 }

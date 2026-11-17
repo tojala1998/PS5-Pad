@@ -17,6 +17,7 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 @property(nonatomic,readonly) BOOL padReady;
 @property(nonatomic,readonly) BOOL supportsOwnership,profileAssigned,waitingForProfile,monitorReady,supportsTextInput;
 @property(nonatomic,readonly) BOOL connecting;
+@property(nonatomic,readonly) BOOL loadingHelper;
 @property(nonatomic,readonly,copy) NSString *message;
 @property(nonatomic,readonly) NSInteger latency;
 @property(nonatomic,readonly) int32_t padHandle;
