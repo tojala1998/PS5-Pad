@@ -1,0 +1,17 @@
+PS5 Pad 0.4.15 (build 21) — 0.4.13 controller baseline, independent Power Off
+
+Restores the 0.4.13 controller, keyboard, discovery and initialization source.
+Bundles the exact original helper 2.7 from 0.4.13, verified by SHA-256; it is
+not rebuilt or silently replaced while running.
+
+Power Off is now a separate, explicitly confirmed one-shot request through the
+PS5 ELF loader on port 9021. It calls sceSystemStateMgrTurnOff and does not
+require a profile selection, controller initialization, a helper version check,
+or successful controller ownership detection. It never sends the old helper's
+Rest Mode-producing command, and never automatically retries an uncertain send.
+The result is shown independently of the controller/profile status message.
+
+The ELF loader must be running. A transfer acknowledgment is not proof of a
+physical shutdown. Full shutdown behavior still needs an on-console test.
+A full shutdown closes running apps and ends the jailbreak; power on and run
+the jailbreak again before reconnecting. Existing running helpers are left alone.

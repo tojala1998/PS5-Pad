@@ -37,6 +37,10 @@ def verify(path, expected_elf):
         assert not any('/Library/' in n or '/Documents/' in n for n in names), 'Preseeded app data found'
         logo=archive.read(prefix+'KodiLogo.png')
         assert logo[:8]==b'\x89PNG\r\n\x1a\n' and struct.unpack_from('>II',logo,16)==(256,256), 'Kodi logo missing'
+        poweroff=archive.read(prefix+'ps5pad-poweroff.elf')
+        expected_poweroff=Path(__file__).resolve().parent.parent/'service/prebuilt/ps5pad-poweroff-1.0.elf'
+        assert poweroff==expected_poweroff.read_bytes(), 'Dedicated power payload differs from this build'
+        assert poweroff[:6]==b'\x7fELF\x02\x01' and struct.unpack_from('<H',poweroff,18)[0]==62, 'Invalid power ELF'
         elf=archive.read(prefix+'padd-controller.elf')
         assert elf==expected_elf.read_bytes(), 'Bundled service differs from tested ELF'
         for name,pixels in [('AppIcon60x60@2x.png',120),('AppIcon60x60@3x.png',180)]:
@@ -46,6 +50,7 @@ def verify(path, expected_elf):
             'bundle_id':info['CFBundleIdentifier'],'unsigned':True,'architecture':'ARM64',
             'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size,
             'service_sha256':hashlib.sha256(elf).hexdigest(),
+            'poweroff_sha256':hashlib.sha256(poweroff).hexdigest(),
             'validation':'Local archive and protocol checks only; no device installation or live input test.'}
 
 if __name__=='__main__':

@@ -144,12 +144,11 @@ int system_launch_vlc(void) { return system_vlc_installed() ? launch_title("PPSA
 int system_launch_kodi(void) { return system_kodi_installed() ? launch_title("PPSA99420") : ENOENT; }
 
 /* LncUtil calls fail with 0x80940004 until the client is initialised. */
-/* SystemStateMgr full power off, distinct from EnterStandby.
- * Signature from OpenOrbis SystemService.h and PS5 Home Assistant's PS5
- * implementation. No ShellCore/standby/raw reboot fallbacks are permitted.
- * Actual console semantics require a user-authorized physical test. */
-int sceSystemStateMgrTurnOff(void);
-int system_power_off(void) { return sceSystemStateMgrTurnOff(); }
+/* ShellCore orderly power-off, type 2; API signature/value verified in
+ * StonedModder/PS5-SystemStateManager commit 414b905 (src + include).
+ * No direct reboot syscall or fallback with different shutdown semantics. */
+int sceShellCoreUtilRequestShutdown(int type);
+int system_power_off(void) { return sceShellCoreUtilRequestShutdown(2); }
 
 void system_shutdown(void) {
     if (hid_fd >= 0) close(hid_fd);

@@ -7,6 +7,7 @@
 #import "QPInitialization.h"
 #import "QPInputFeedback.h"
 #import "QPLifecycle.h"
+#import "QPPowerOff.h"
 
 static UIColor *Color(unsigned rgb) {
     return [UIColor colorWithRed:((rgb>>16)&255)/255.0 green:((rgb>>8)&255)/255.0 blue:(rgb&255)/255.0 alpha:1];
@@ -295,6 +296,7 @@ static void Round(UIView *view,CGFloat radius) {
     QPLifecycle _lifecycle;
 }
 @property(nonatomic,strong) QPConnection *link;
+@property(nonatomic,strong) QPPowerOff *powerOffSender;
 @property(nonatomic,strong) UIView *canvas;
 @property(nonatomic,strong) UILabel *titleLabel,*statusLabel,*result;
 @property(nonatomic,strong) UIButton *consoleButton,*appsButton,*moreButton;
@@ -693,21 +695,31 @@ static void Round(UIView *view,CGFloat radius) {
     [self presentViewController:navigation animated:YES completion:nil];
 }
 - (void)confirmPowerOff {
-    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Power Off PS5?" message:@"This closes running apps and fully shuts down the console. You will need to turn it on and run the jailbreak again before reconnecting." preferredStyle:UIAlertControllerStyleAlert];
+    if(!_host.length||(_powerOffSender&&!_powerOffSender.available))return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Power Off PS5?" message:@"Request full shutdown through the PS5 ELF loader. No profile selection is required. This closes running apps and ends the jailbreak; you must turn the console on and jailbreak again before reconnecting." preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Power Off" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
-        (void)a;if(!self.link.ready||!self.link.supportsPowerOff||self.link.controlBusy||self.link.keyboardActive)return;
+        (void)a;if(!self.host.length||(self.powerOffSender&&!self.powerOffSender.available))return;
         [self cancelEnsureSession];qp_initialization_cancel(&self->_initialization);
         self.wantsConnection=NO;self.needsInitializePrompt=NO;self.autoInitializeAttempted=YES;
-        [self clearControls];self.result.text=@"Requesting power off…";[self.link powerOff];
+        [self clearControls];[self.link disconnect:@"Requesting full power off…"];
+        if(!self.powerOffSender)self.powerOffSender=[QPPowerOff new];
+        __weak QPViewController *weakSelf=self;
+        self.powerOffSender.completed=^(NSString *message){
+            QPViewController *controller=weakSelf;if(!controller)return;
+            controller.result.text=message;
+            if(!controller->_lifecycle.active||!controller.view.window||controller.presentedViewController)return;
+            UIAlertController *result=[UIAlertController alertControllerWithTitle:@"Power Off" message:message preferredStyle:UIAlertControllerStyleAlert];
+            [result addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [controller presentViewController:result animated:YES completion:nil];
+        };
+        [self.powerOffSender requestAt:self.host confirmed:YES];
     }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)showConnection {
     [self clearControls];
     NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.ready?[NSString stringWithFormat:@"Helper %@ connected. %@",_link.serviceVersion?:@"",_link.message?:@""]:_link.message?:@""];
-    if(_link.ready&&!_link.supportsPowerOff)
-        detail=[detail stringByAppendingString:@"\n\nFull Power Off requires helper 2.8 or newer. Controller functions remain available. The running helper is never replaced automatically."];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:_link.ready?@"PS5 connection":@"Connect to PS5" message:detail preferredStyle:UIAlertControllerStyleAlert];
     BOOL controllerConnected=_link.ready&&_link.padReady;
     if(controllerConnected) {
@@ -734,7 +746,7 @@ static void Round(UIView *view,CGFloat radius) {
     UIAlertAction *power=[UIAlertAction actionWithTitle:@"Power Off PS5" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
         (void)a;[self dismissViewControllerAnimated:YES completion:^{[self confirmPowerOff];}];
     }];
-    power.enabled=_link.ready&&_link.supportsPowerOff&&!_link.controlBusy&&!_link.keyboardActive&&!_link.disconnectingController;
+    power.enabled=_host.length>0&&(!_powerOffSender||_powerOffSender.available);
     [sheet addAction:power];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
@@ -790,6 +802,7 @@ static void Round(UIView *view,CGFloat radius) {
 }
 - (void)suspend {
     qp_lifecycle_suspend(&_lifecycle); _lifecycleBlockedReason=@"Scene inactive";
+    [_powerOffSender cancel];
     [self cancelEnsureSession]; qp_initialization_cancel(&_initialization); [self clearControls];
     [_link disconnect:@"Paused in the background"]; UIApplication.sharedApplication.idleTimerDisabled=NO;
 }

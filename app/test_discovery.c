@@ -2,8 +2,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <sys/wait.h>
-
-/* Apple's strict POSIX headers omit this IPv4 loopback constant. */
 #ifndef INADDR_LOOPBACK
 #define INADDR_LOOPBACK 0x7f000001u
 #endif

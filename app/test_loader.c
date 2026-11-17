@@ -22,9 +22,8 @@ int main(void) {
     assert(!qp_loader_owned_path("/mnt/usb0/uhnmeyker-ps5pad-abc.elf",stem,name));
     assert(!qp_loader_owned_path("/data/pldmgr/payloads/other/uhnmeyker-ps5pad-abc.elf",stem,name));
     assert(!qp_loader_owned_path("/data/pldmgr/payloads/local/uhnmeyker-ps5pad-abc/../uhnmeyker-ps5pad-abc.elf",stem,name));
-    unsigned char hello[28]={0};qp_header(hello,QP_HELLO,20);hello[8]=1;hello[10]=8;hello[11]=2;qp_put32(hello+20,QP_CAP_CONTROL);
+    unsigned char hello[28]={0};qp_header(hello,QP_HELLO,20);hello[8]=1;hello[10]=7;hello[11]=2;qp_put32(hello+20,QP_CAP_CONTROL);
     assert(qp_loader_hello_valid(hello,28,true));assert(!qp_loader_hello_valid(hello,27,true));
-    hello[10]=7;assert(!qp_loader_hello_valid(hello,28,true));assert(qp_loader_hello_valid(hello,28,false));
     hello[10]=6;assert(!qp_loader_hello_valid(hello,28,true));assert(qp_loader_hello_valid(hello,28,false));
     hello[5]=QP_ERROR;assert(!qp_loader_hello_valid(hello,28,false));
     puts("PASS: loader image, fallback/no-duplicate policy, owned paths, and helper greeting/version validation.");

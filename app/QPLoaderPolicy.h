@@ -25,6 +25,6 @@ static inline bool qp_loader_owned_path(const char *path,const char *stem,const 
 }
 static inline bool qp_loader_hello_valid(const unsigned char *p,size_t n,bool launched) {
     return n==28&&!memcmp(p,"PMCP",4)&&p[4]==1&&p[5]==QP_HELLO&&qp_u16(p+6)==20&&qp_u16(p+8)==1&&
-        (qp_u32(p+20)&QP_CAP_CONTROL)&&(!launched||qp_u16(p+10)>=0x0208);
+        (qp_u32(p+20)&QP_CAP_CONTROL)&&(!launched||qp_u16(p+10)>=0x0207);
 }
 #endif

@@ -23,6 +23,9 @@ cc -std=c11 -Wall -Wextra -Werror test_input_feedback.c -o "$BUILD/test_input_fe
 cc -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror test_discovery.c -o "$BUILD/test_discovery"
 "$BUILD/test_discovery"
 python3 check_ui_contract.py "$SDK"
+python3 "$ROOT/tools/check_poweroff_scope.py"
+cc -std=c11 -Wall -Wextra -Werror test_poweroff.c -o "$BUILD/test_poweroff"
+"$BUILD/test_poweroff"
 # Keep the existing portable compiler pipeline, but use the installed Apple
 # toolchain on GitHub's macOS runners instead of requiring Linux llvm-18.
 if [[ "$(uname -s)" == Darwin ]]; then
@@ -34,12 +37,12 @@ else
   IOS_LD=(ld64.lld-18)
   SDK_VERSION=16.5
 fi
-for source in main QPConnection QPDiscovery QPLocalNetworkAccess QPHelperLoader; do
+for source in main QPConnection QPDiscovery QPLocalNetworkAccess QPHelperLoader QPPowerOff; do
   "${IOS_CC[@]}" -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks -O2 -Wall -Wextra \
     -Werror -Wno-unused-parameter -c "$source.m" -o "$BUILD/$source.o"
 done
 "${IOS_LD[@]}" -arch arm64 -platform_version ios 15.0 "$SDK_VERSION" -syslibroot "$SDK" \
-  -o "$APP/PS5Pad" "$BUILD/main.o" "$BUILD/QPConnection.o" "$BUILD/QPDiscovery.o" "$BUILD/QPLocalNetworkAccess.o" "$BUILD/QPHelperLoader.o" \
+  -o "$APP/PS5Pad" "$BUILD/main.o" "$BUILD/QPConnection.o" "$BUILD/QPDiscovery.o" "$BUILD/QPLocalNetworkAccess.o" "$BUILD/QPHelperLoader.o" "$BUILD/QPPowerOff.o" \
   -lSystem -lobjc -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework Network \
   -headerpad 0x4000 -no_adhoc_codesign
 cp Info.plist "$APP/Info.plist"
@@ -57,6 +60,7 @@ PY
 ELF="$ROOT/service/prebuilt/padd-controller-$HELPER_VERSION.elf"
 test -f "$ELF" || { echo "Missing verified helper $HELPER_VERSION ELF; do not package an older helper." >&2; exit 1; }
 cp "$ELF" "$APP/padd-controller.elf"
+cp "$ROOT/service/prebuilt/ps5pad-poweroff-1.0.elf" "$APP/ps5pad-poweroff.elf"
 VERSION="$(python3 -c 'import plistlib; print(plistlib.load(open("Info.plist","rb"))["CFBundleShortVersionString"])')"
 OUTPUT="$ROOT/dist/PS5-Pad-$VERSION-unsigned.ipa"
 python3 package.py "$APP" "$BUILD/PS5-Pad.ipa"

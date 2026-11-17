@@ -170,3 +170,12 @@ The service derives from [leolobato/ps5-mcp](https://github.com/leolobato/ps5-mc
 Kodi mapping references: [PS5 input](https://github.com/VivaLaVent/PS5MC/blob/ps5mc-piers/xbmc/platform/ps5/input/PS5PadInput.cpp), [keyboard actions](https://github.com/VivaLaVent/PS5MC/blob/ps5mc-piers/system/keymaps/keyboard.xml).
 
 The top Kodi shortcut uses the unmodified [official Kodi logo](https://kodi.wiki/view/File:Logo-transparent_bare_256px.png); see `app/assets/KodiLogo-source.txt`. PS5 Pad is an independent project.
+
+## 0.4.15 power-off correction
+
+The controller implementation and bundled helper are restored to 0.4.13.
+Power Off uses a separate one-shot payload through ELF loader TCP 9021, after
+explicit confirmation, without waiting for controller/profile assignment.
+Only that shutdown payload is newly compiled; the original controller ELF is
+checksum-pinned. Existing running helpers are not replaced. No automatic
+retry follows an ambiguous transfer. Physical shutdown remains device-test-only.

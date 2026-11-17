@@ -29,13 +29,6 @@ int main(void) {
     assert(!qp_supports_disconnect(0x0202,QP_CAP_CONTROL|QP_CAP_DISCONNECT_CONTROLLER));
     assert(!qp_supports_disconnect(0x0203,QP_CAP_CONTROL));
     assert(!qp_supports_disconnect(0x0203,QP_CAP_DISCONNECT_CONTROLLER));
-    /* Helper 2.7 may advertise the capability but cannot safely power off. */
-    assert(!qp_supports_power_off(0x0207,QP_CAP_CONTROL|QP_CAP_POWER_OFF));
-    assert(qp_supports_power_off(0x0208,QP_CAP_CONTROL|QP_CAP_POWER_OFF));
-    assert(qp_supports_power_off(0x0300,QP_CAP_CONTROL|QP_CAP_POWER_OFF));
-    assert(!qp_supports_power_off(0x0208,QP_CAP_POWER_OFF));
-    assert(!qp_supports_power_off(0x0208,QP_CAP_CONTROL));
-    assert(!qp_supports_power_off(0,QP_CAP_CONTROL|QP_CAP_POWER_OFF));
     uint8_t removed[32]={0}; qp_put32(removed+16,(uint32_t)-1);
     assert(qp_disconnect_response_valid(removed));
     qp_put32(removed+20,1); assert(!qp_disconnect_response_valid(removed)); qp_put32(removed+20,0);
