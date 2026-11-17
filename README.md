@@ -94,12 +94,14 @@ The source uses `com.uhnmeyker.ps5pad`, the original unsigned app identifier.
 Use the same Apple Account as the existing standalone installation. Adding a
 source does not itself reinstall or delete an app. SideStore performs signing
 and installation when you choose an update; signing refreshes remain separate
-from publishing new versions. First source import/update on the phone is pending
-owner confirmation.
+from publishing new versions. The owner confirmed source import and the 0.4.9 listing on the phone.
+Installing a future update through the source is not yet verified.
 
 Successful builds now run `tools/prepare_source.py`: it validates the IPA hash,
 size, bundle identity and version against the build report, stages the versioned
-IPA under `releases/`, and refreshes `source.json`. The newest version goes first;
+IPA under `releases/`, and refreshes `source.json`. Each version includes
+`buildVersion` read from the IPA's `CFBundleVersion` (0.4.9 uses `"15"`).
+This field is decoded by current SideStore; its older source-types schema omits it. The newest version goes first;
 existing release dates and older source entries are retained. A different IPA
 cannot replace an already staged version: bump the app version before releasing.
 Commit/publish `source.json` and its versioned IPA/report together with the source

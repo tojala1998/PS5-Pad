@@ -17,6 +17,7 @@ class SourceTests(unittest.TestCase):
     def test_idempotent_and_retains_release_date(self):
         stage(self.root,self.ipa,self.report,'2026-11-16')
         before=(self.root/'source.json').read_bytes()
+        self.assertEqual(json.loads(before)["apps"][0]["versions"][0]["buildVersion"],"15")
         stage(self.root,self.ipa,self.report,'2026-11-17')
         self.assertEqual(before,(self.root/'source.json').read_bytes())
         stage(self.root,self.ipa,self.report,check=True)

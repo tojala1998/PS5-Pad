@@ -50,6 +50,7 @@ def stage(root, ipa, report_path, release_date=None, check=False):
     notes = (root / "docs" / ("PS5-Pad-" + version + "-notes.txt")).read_text(encoding="utf-8")
     entry = {
         "version": version,
+        "buildVersion": str(info["CFBundleVersion"]),
         "date": previous["date"] if previous else (release_date or date.today().isoformat()),
         "localizedDescription": notes.strip(),
         "downloadURL": RAW + "releases/" + version + "/" + name,
