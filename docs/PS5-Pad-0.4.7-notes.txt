@@ -1,0 +1,64 @@
+PS5 Pad 0.4.7 (build 13), controller service 2.4
+
+Reciprocal controller handoff
+The owner confirmed that selecting a profile with PS5 Pad switches off the
+physical controller, but selecting the same profile with the physical controller
+left the virtual controller active. Manually disconnecting PS5 Pad restored
+physical-controller input in the running VLC instance, without an app restart.
+
+Service 2.4 subscribes to the console's existing local TCP 3232 log server.
+It does not open /dev/klog or replace the log server. It follows controller
+addition, removal and owner-change events. A different controller assigned to
+our controller's actual profile makes it neutralize and remove only its own
+virtual controller, then notify and disconnect the phone. The phone's active
+session stays off until Turn On Controller is selected; foreground interruptions
+do not restart it. A fresh app launch still begins the saved-console flow.
+
+Profile assignment is distinct from creating a virtual device. Until an owner
+event confirms the profile, the app shows Choose your profile on TV and permits
+only D-pad, Cross and Circle for the picker. Media launch and typing are gated
+on confirmed assignment. A saved/foreground user id and successful reports are
+not treated as proof of selection. Loss of the log stream releases the virtual
+controller; initialization is refused while monitoring is unavailable. Failed
+removal retains the handle for retry and cannot create a duplicate controller.
+
+This depends on the console log server and event format. It is not a universal
+PS5 ownership API. Local tests cover the parser, real socket handoff, other
+profiles/devices, monitor loss, picker filtering and no automatic recreation.
+Physical-controller takeover still needs live confirmation after deployment.
+
+Manual keyboard
+The three-dot menu includes Keyboard. Open a PS5 text field first, enter text on
+the phone and select Send. There is no keyboard-popup detection. Supported input
+is 1–128 printable US-ASCII characters using a US keyboard layout. The entire
+string is validated before creating a keyboard. Send does not press Enter.
+Typing is nonblocking and sends a release between keys. The keyboard is removed
+after completion, client disconnection, controller handoff, or 1.8 seconds without
+client traffic. Removal failure retains ownership for retry. Text is neither
+logged nor stored in preferences or files. No keyboard is created by opening the
+app or its text-entry sheet. The prior isolated backend test typed correctly in
+Kodi on firmware 13.60; this integrated UI still requires its own live test.
+
+Connection feedback
+The persistent Service / Controller / Done strip is removed. A small green bar
+below the connection text pulses during connection/initialization, flashes on
+confirmed readiness and disappears. Profile selection retains its plain-language
+status rather than presenting an unassigned controller as Ready.
+
+Validation and boundaries
+Host daemon tests exercise initialization faults, handoff and keyboard cleanup;
+the native ARM64 build also runs existing input/lifecycle/discovery checks.
+No device settings, Home Screen layout, app data or Apple signing credentials
+are changed. No Remote Play, video/audio stream or Windows relay is used.
+Deploying the helper replaces PS5 Pad's existing virtual controller once; it
+does not close or relaunch the running media application.
+
+Sources and retained notices
+Ownership events observed on the owner's console; related implementation:
+https://github.com/sub0x00001/octet/blob/main/src/ps5_vpad.c
+Application-routing observations and limitations:
+https://github.com/leolobato/ps5-mcp/blob/main/docs/findings.md
+https://github.com/ZiZc3/VLC/blob/main/src/platform_ps5.c
+Keyboard backend remains under its retained GPL-3.0 notices in
+experiments/keyboard-probe/THIRD_PARTY.txt and third_party/. PS5 Pad adds a
+retryable keyboard-close function; the original close API remains unchanged.

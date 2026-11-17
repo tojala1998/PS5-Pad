@@ -24,6 +24,8 @@ int ps_keyboard_open(uint32_t user_id, ps_keyboard **out);
 int ps_keyboard_send(ps_keyboard *keyboard, uint8_t modifiers, const uint8_t *usages, uint8_t count);
 // Releases every key and removes the keyboard. NULL is harmless.
 int ps_keyboard_close(ps_keyboard *keyboard);
+// PS5 Pad addition: retain the owned handle on removal failure for retry.
+int ps_keyboard_try_close(ps_keyboard **keyboard);
 // The handle the add returned; the bus knows the keyboard as handle | 3 << 48 (profile_seat.h). 0 for NULL.
 uint32_t ps_keyboard_device_id(const ps_keyboard *keyboard);
 

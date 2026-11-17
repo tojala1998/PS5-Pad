@@ -114,6 +114,19 @@ int ps_keyboard_close(ps_keyboard *keyboard)
     return rc;
 }
 
+/* PS5 Pad: do not discard ownership of a keyboard whose removal failed. */
+int ps_keyboard_try_close(ps_keyboard **keyboard)
+{
+    if (!keyboard || !*keyboard) return 0;
+    ps_keyboard *k = *keyboard;
+    (void)ps_keyboard_send(k, 0, NULL, 0);
+    struct { uint8_t op; uint8_t pad[7]; uint32_t handle; uint32_t pad2; } del = {5, {0}, (uint32_t)k->device.handle, 0};
+    if (ioctl(k->device.fd, IOCTL_DELETE, &del) != 0 && errno != ENOENT && errno != ENODEV)
+        return errno ? -errno : -EIO;
+    close(k->device.fd); free(k); *keyboard = NULL;
+    return 0;
+}
+
 int ps_mouse_open(uint32_t user_id, ps_mouse **out)
 {
     if (!out) return -EINVAL;

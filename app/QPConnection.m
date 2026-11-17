@@ -22,6 +22,7 @@
     BOOL _dirty, _tcpReady, _connectBlocked;
     NSTimeInterval _connectTimeout;
     uint8_t _controlType;
+    NSData *_controlPayload;
     BOOL _controlSent;
     BOOL _initializationFailed, _disconnectRequested;
     NSTimeInterval _controlStarted;
@@ -33,6 +34,7 @@
 @property(nonatomic,readwrite) QPConnectionFailure failureKind;
 @property(nonatomic,readwrite) BOOL controllerChecked;
 @property(nonatomic,readwrite) BOOL padReady;
+@property(nonatomic,readwrite) BOOL supportsOwnership,profileAssigned,waitingForProfile,monitorReady,supportsTextInput;
 @property(nonatomic,readwrite) BOOL connecting;
 @property(nonatomic,readwrite,copy) NSString *message;
 @property(nonatomic,readwrite) NSInteger latency;
@@ -56,7 +58,7 @@
 - (void)publish {
     NSDictionary *record=@{@"app":@"PS5 Pad", @"version":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"0.1.2", @"host":_host?:@"",
         @"port":@9305, @"ready":@(_ready), @"connecting":@(_connecting), @"message":_message?:@"",
-        @"pad_ready":@(_padReady), @"connection_failure":@(_failureKind), @"controller_checked":@(_controllerChecked),
+        @"pad_ready":@(_padReady), @"profile_assigned":@(_profileAssigned), @"waiting_for_profile":@(_waitingForProfile), @"ownership_monitor_ready":@(_monitorReady), @"connection_failure":@(_failureKind), @"controller_checked":@(_controllerChecked),
         @"pad_handle":@(_padHandle), @"latency_ms":@(_latency), @"last_ack":@(_lastAck),
         @"server_report_failures":@(_failures), @"transport":@"direct TCP",
         @"input_events":@(_inputEvents), @"last_input_mask":@(_lastInputMask),
@@ -74,6 +76,19 @@
         writeToFile:file atomically:YES];
     if (_changed) _changed();
 }
+- (void)readOwnershipFlags:(uint32_t)flags {
+    _supportsTextInput=(flags&QP_CAP_TEXT_INPUT)!=0;
+    _supportsOwnership=(flags&QP_CAP_OWNERSHIP)!=0;
+    _profileAssigned=_supportsOwnership&&(flags&QP_PROFILE_ASSIGNED)!=0;
+    _waitingForProfile=_supportsOwnership&&(flags&QP_PROFILE_PENDING)!=0;
+    _monitorReady=_supportsOwnership&&(flags&QP_MONITOR_READY)!=0;
+}
+- (NSString *)controllerMessage {
+    if(_waitingForProfile) return @"Choose your profile on the TV. Use the swipe pad to select it.";
+    if(_profileAssigned&&_padReady) return @"Controller connected to your profile.";
+    if(_supportsOwnership&&!_monitorReady) return @"Waiting for the PS5 controller monitor.";
+    return _padReady?@"Virtual controller connected; profile assignment unverified.":@"Service connected. Use ••• → Turn On Controller.";
+}
 - (void)invalidateInputFeedback {
     qp_feedback_gate_reset(&_feedbackGate); _lastAckedButtons=0;
     if(_inputFeedbackReset) _inputFeedbackReset();
@@ -82,6 +97,8 @@
     nw_connection_t old=_connection;
     BOOL sendNeutral=_ready&&_padReady;
     _connection=nil; _generation++; [_timer invalidate]; _timer=nil;
+    _controlPayload=nil; _supportsTextInput=NO;
+    _supportsOwnership=_profileAssigned=_waitingForProfile=_monitorReady=NO;
     _ready=NO; _padReady=NO; _connecting=NO; _failureKind=QPConnectionFailureNone; _controllerChecked=NO; _inflight=0; _state=qp_neutral(); _dirty=NO;
     _controlBusy=NO; _controlType=0; _controlSent=NO; _supportsControl=NO; _supportsDisconnectController=NO; _disconnectRequested=NO; _initializationFailed=NO; qp_input_reset(&_inputs);
     if(_loader) { nw_connection_cancel(_loader); _loader=nil; }
@@ -148,7 +165,7 @@
         (void)timer; QPConnection *self=weakSelf; if(!self) return;
         NSTimeInterval now=[self now];
         if(self.ready) {
-            if(self.controlBusy && now-self->_controlStarted>8) {
+            if(self.controlBusy && now-self->_controlStarted>(self->_controlType==QP_TYPE_TEXT?14:8)) {
                 [self failConnection:@"PS5 did not finish the request. Check the TV before retrying." unavailable:NO]; return;
             }
             if (!self.controlBusy && ((self->_inflight && now-self->_sentAt>0.7) || now-self->_lastPong>3.5)) {
@@ -194,8 +211,10 @@
 - (void)sendControlRequest {
     if(_controlSent || !_controlType) return;
     _controlSent=YES;
-    uint8_t frame[8]; qp_header(frame,_controlType,0);
-    [self sendData:[NSData dataWithBytes:frame length:8]];
+    uint8_t frame[8]; qp_header(frame,_controlType,(uint16_t)_controlPayload.length);
+    NSMutableData *message=[NSMutableData dataWithBytes:frame length:8];
+    if(_controlPayload) [message appendData:_controlPayload];
+    _controlPayload=nil; [self sendData:message];
 }
 - (void)flush {
     if(!_ready || _inflight) return;
@@ -246,6 +265,7 @@
             if(qp_u16(p)!=1 || (!(qp_u32(p+12)&0x10000) && (!(qp_u32(p+12)&1) || (int32_t)qp_u32(p+4)<0 || qp_u32(p+16)))) {
                 [self failConnection:@"PS5 service is running, but its controller isn’t ready." unavailable:NO]; return;
             }
+            [self readOwnershipFlags:qp_u32(p+12)];
             _padHandle=(int32_t)qp_u32(p+4); _ready=YES; _connecting=NO;
             _supportsControl=(qp_u32(p+12)&QP_CAP_CONTROL)!=0;
             _supportsDisconnectController=qp_supports_disconnect(qp_u16(p+2),qp_u32(p+12));
@@ -267,6 +287,7 @@
             _lastPong=[self now]; _latency=(NSInteger)((_lastPong-_lastPing)*1000);
             _failures=qp_u32(p+32);
             _padHandle=(int32_t)qp_u32(p+16);
+            [self readOwnershipFlags:qp_u32(p+20)];
             BOOL reportedReady=(qp_u32(p+20)&1)!=0 && _padHandle>=0 && !_initializationFailed;
             if(reportedReady!=_padReady) {
                 _controllerChecked=NO; /* A changed PING is not a new STATUS snapshot. */
@@ -275,12 +296,23 @@
             BOOL lostPad=!reportedReady && _padReady;
             _padReady=reportedReady;
             if(lostPad) [self releaseControls];
+            if(!_controlBusy) _message=[self controllerMessage];
             [self publish];
+        } else if(kind==QP_TYPE_TEXT && length==8 && _ready) {
+            if(!_controlSent || _controlType!=kind) { [self failConnection:@"Unexpected keyboard response." unavailable:NO]; return; }
+            int32_t status=(int32_t)qp_u32(p); uint32_t count=qp_u32(p+4);
+            _controlBusy=NO; _controlType=0; _controlSent=NO; _lastPong=[self now]; _sentAt=_lastPong;
+            _lastAction=@"keyboard"; _lastActionStatus=status;
+            _message=status?[NSString stringWithFormat:@"Typing stopped after %u characters (0x%08X).",count,(unsigned)status]:[NSString stringWithFormat:@"Sent %u characters. Keyboard disconnected.",count];
+            if(_completed) _completed(@"keyboard",status);
+            [self tryDisconnectController]; [self flush]; [self publish];
         } else if(kind==QP_ERROR && length>=4) {
             NSString *detail=[[NSString alloc] initWithBytes:p+4 length:length-4 encoding:NSUTF8StringEncoding];
+            if(qp_u32(p)==8 && _completed) _completed(@"handoff",0);
             [self failConnection:qp_u32(p)==5?@"Controller is busy in another app.":(detail?:@"PS5 returned an error.") unavailable:NO]; return;
         } else if((kind==QP_STATUS || kind==QP_INITIALIZE || kind==QP_DISCONNECT_CONTROLLER) && length==32 && _ready) {
             if(!_controlSent || _controlType!=kind) { [self failConnection:@"Unexpected controller response." unavailable:NO]; return; }
+            [self readOwnershipFlags:qp_u32(p+20)];
             _userStatus=(int32_t)qp_u32(p+4); _otherController=(int32_t)qp_u32(p+8);
             _padHandle=(int32_t)qp_u32(p+16); _vlcInstalled=(qp_u32(p+24)&1)!=0; _kodiInstalled=(qp_u32(p+24)&2)!=0;
             BOOL reportedReady=(qp_u32(p+20)&1)!=0 && _padHandle>=0;
@@ -305,7 +337,7 @@
                 [self invalidateInputFeedback];
                 if(incomplete) _message=@"Initialization failed: the service did not report a ready virtual controller.";
                 else if(status) _message=[NSString stringWithFormat:@"Initialization failed (0x%08X). Use ••• → Initialize Controller to retry.",(unsigned)status];
-                else _message=@"Virtual controller ready. Select your profile on the TV if asked.";
+                else _message=[self controllerMessage];
                 _lastAction=@"initialize"; _lastActionStatus=status;
                 if(_completed) _completed(@"initialize",status);
             } else {
@@ -313,7 +345,7 @@
                 _controllerChecked=status==0;
                 if(status) { _padReady=NO; _message=[NSString stringWithFormat:@"Controller check failed (0x%08X).",(unsigned)status]; }
                 else if(_initializationFailed) _message=@"Initialization has not succeeded. Use ••• → Initialize Controller to retry.";
-                else _message=_padReady?@"Service connected; virtual controller available.":@"Service connected. Use ••• → Initialize Controller.";
+                else _message=[self controllerMessage];
                 if(status && _completed) _completed(@"check",status);
             }
             [self tryDisconnectController]; [self flush]; [self publish];
@@ -332,7 +364,7 @@
     [self invalidateInputFeedback];
     _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _controlBusy=YES; _controlType=kind; _controlSent=NO; _controlStarted=[self now];
-    _message=kind==QP_DISCONNECT_CONTROLLER?@"Disconnecting controller…":(kind==QP_INITIALIZE?@"Initializing…":(kind==QP_STATUS?@"Checking controller…":(kind==QP_KODI?@"Opening Kodi…":@"Opening VLC…")));
+    _message=kind==QP_TYPE_TEXT?@"Typing…":(kind==QP_DISCONNECT_CONTROLLER?@"Disconnecting controller…":(kind==QP_INITIALIZE?@"Turning on controller…":(kind==QP_STATUS?@"Checking controller…":(kind==QP_KODI?@"Opening Kodi…":@"Opening VLC…"))));
     [self flush]; [self publish];
 }
 - (BOOL)disconnectingController { return _disconnectRequested || _controlType==QP_DISCONNECT_CONTROLLER; }
@@ -352,6 +384,14 @@
     [self invalidateInputFeedback];
     _disconnectRequested=YES; _state=qp_neutral(); qp_input_reset(&_inputs); _dirty=YES;
     _message=@"Disconnecting controller…"; [self tryDisconnectController]; [self publish];
+}
+- (void)typeText:(NSString *)text {
+    if(!_ready || !_supportsTextInput || !_profileAssigned || _controlBusy) return;
+    NSData *bytes=[text dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:NO];
+    const uint8_t *p=bytes.bytes; BOOL valid=bytes.length>0&&bytes.length<=128;
+    for(NSUInteger i=0;i<bytes.length;i++) if(p[i]<32||p[i]>126) valid=NO;
+    if(!valid) { _message=@"Use 1–128 English letters, numbers, spaces or punctuation."; [self publish]; return; }
+    _controlPayload=bytes; [self control:QP_TYPE_TEXT];
 }
 - (void)checkController { [self control:QP_STATUS]; }
 - (void)initializeController { [self control:QP_INITIALIZE]; }

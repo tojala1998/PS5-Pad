@@ -28,6 +28,7 @@ enum pmcp_type {
     PMCP_GET_USER = 9,  /* no request payload; reply: struct pmcp_user (requires PMCP_FLAG_USER_NAME) */
     PMCP_GET_USERS = 10, /* no request payload; reply: struct pmcp_users (requires PMCP_FLAG_USERS) */
     PMCP_GET_PADS = 11, /* no request payload; reply: struct pmcp_pads (requires PMCP_FLAG_PADS) */
+    QP_TYPE_TEXT = 133, /* 1..128 printable ASCII bytes; reply i32 status,u32 characters */
     QP_STATUS = 128,    /* QuietPad extension; empty request, qp_status response */
     QP_INITIALIZE = 129,/* remove only our pad, inspect foreground controller, recreate our pad */
     QP_VLC = 130,       /* launch only the verified VLC title; i32 status response */
@@ -130,6 +131,12 @@ struct pmcp_command {           /* 4 + 4 + 32 bytes */
 #define PMCP_FLAG_PAD_READY       0x1
 #define QP_FLAG_CONTROLS          0x10000
 #define QP_FLAG_DISCONNECT_CONTROLLER 0x20000 /* explicit session end supported (padd 2.3+) */
+#define QP_FLAG_TEXT_INPUT 0x800000
+#define QP_FLAG_OWNERSHIP 0x40000 /* live profile assignment monitor supported */
+#define QP_FLAG_PROFILE_ASSIGNED 0x80000
+#define QP_FLAG_PROFILE_PENDING 0x100000
+#define QP_FLAG_YIELDED 0x200000
+#define QP_FLAG_MONITOR_READY 0x400000
 #define PMCP_FLAG_TOUCH_UNMAPPED  0x2   /* touch coordinates are accepted but not delivered */
 #define PMCP_FLAG_USER_NAME       0x4   /* GET_USER supported (padd 1.2+) */
 #define PMCP_FLAG_UNINSTALL       0x8   /* COMMAND op UNINSTALL supported (padd 1.3+) */

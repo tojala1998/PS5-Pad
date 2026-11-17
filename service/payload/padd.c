@@ -27,8 +27,10 @@
 
 #include "protocol.h"
 #include "system.h"
+#include "owner_monitor.h"
+#include "text_input.h"
 
-#define PADD_VERSION 0x0203
+#define PADD_VERSION 0x0204
 #define PAD_DETACH_SETTLE_MS 180u
 #define PAD_NEUTRAL_WARMUP_MS 200u
 
@@ -50,6 +52,10 @@ struct daemon {
         int ready;
         struct pmcp_state state;
     } pad;
+    struct owner_monitor ownership;
+    struct text_job text;
+    int profile_assigned, yielded, handoff_pending;
+    uint64_t last_handoff_retry;
     int add_status;
     int32_t other_connected, other_status, user_status;
     uint32_t initialization_count;
@@ -165,6 +171,7 @@ static void force_neutral(struct daemon *d, const char *reason) {
 
 static void drop_client(struct daemon *d, const char *reason) {
     if (d->client_fd < 0) return;
+    text_cancel(&d->text,ECANCELED);
     close(d->client_fd);
     d->client_fd = -1;
     d->rx_len = 0;
@@ -174,7 +181,12 @@ static void drop_client(struct daemon *d, const char *reason) {
 
 static uint32_t flags(const struct daemon *d) {
     return (d->pad.ready ? PMCP_FLAG_PAD_READY : 0) | PMCP_FLAG_TOUCH_UNMAPPED |
-        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER;
+        QP_FLAG_CONTROLS | QP_FLAG_DISCONNECT_CONTROLLER | QP_FLAG_TEXT_INPUT |
+        (d->ownership.enabled ? QP_FLAG_OWNERSHIP : 0) |
+        (d->ownership.enabled && d->ownership.synced ? QP_FLAG_MONITOR_READY : 0) |
+        (d->profile_assigned ? QP_FLAG_PROFILE_ASSIGNED : 0) |
+        (d->ownership.enabled && d->pad.ready && !d->profile_assigned ? QP_FLAG_PROFILE_PENDING : 0) |
+        (d->yielded ? QP_FLAG_YIELDED : 0);
 }
 
 static void controller_status(struct daemon *d, uint8_t type, int status) {
@@ -186,6 +198,9 @@ static void controller_status(struct daemon *d, uint8_t type, int status) {
 }
 
 static int initialize_controller(struct daemon *d) {
+    if(d->text.active || d->text.cleanup) return EBUSY;
+    if(d->ownership.enabled && !d->ownership.synced) return EAGAIN;
+    d->profile_assigned=0; d->yielded=0;
     int32_t user;
     int rc = system_foreground_user(&user);
     d->user_status = rc;
@@ -242,9 +257,10 @@ static int initialize_controller(struct daemon *d) {
 /* Session end must be explicit. EOF, heartbeat loss and phone sleep only
  * neutralize input, because they cannot distinguish sleep from an ended session. */
 static int disconnect_controller(struct daemon *d) {
+    text_cancel(&d->text,ECANCELED);
     neutral(&d->pad.state);
     d->last_state_ms = now_ms();
-    d->pad.ready = 0;
+    d->pad.ready = 0; d->profile_assigned=0;
     if (d->pad.handle < 0) return 0;
     /* A prior failed removal retains ownership but not readiness. Retry neutral
      * on that same handle before removing it; never look up or remove other pads. */
@@ -261,8 +277,40 @@ static int disconnect_controller(struct daemon *d) {
     return rc;
 }
 
+static void yield_controller(struct daemon *d,const char *reason) {
+    if(d->pad.handle<0) return;
+    d->yielded=1;
+    d->handoff_pending=disconnect_controller(d)!=0;
+    d->last_handoff_retry=now_ms();
+    log_event("controller_yielded","\"removal_pending\":%d",d->handoff_pending);
+    send_error(d,8,reason); drop_client(d,"controller_yielded");
+}
+static void ownership_event(void *context,struct owner_event e) {
+    struct daemon *d=context;
+    if(d->pad.handle<0) return;
+    if(e.device==(uint32_t)d->pad.handle) {
+        if(e.kind==OWNER_CHANGE) {
+            if(e.user && e.user!=UINT32_MAX) {
+                d->pad.user_id=(int32_t)e.user; d->profile_assigned=1;
+                log_event("profile_assigned","\"handle\":%d",d->pad.handle);
+            } else yield_controller(d,"Profile released. Turn on the controller to choose a profile.");
+        } else if(e.kind==OWNER_REMOVE) {
+            d->pad.handle=-1; d->pad.ready=0; d->profile_assigned=0; d->yielded=1;
+            send_error(d,8,"Controller turned off. Turn it on to reconnect."); drop_client(d,"system_removed_controller");
+        }
+    } else if(e.kind==OWNER_CHANGE && e.controller && e.user && e.user!=UINT32_MAX && e.user==(uint32_t)d->pad.user_id) {
+        yield_controller(d,"Physical controller took control. Turn on PS5 Pad to switch back.");
+    }
+}
+
 static void handle_message(struct daemon *d, uint8_t type, const uint8_t *payload, uint16_t length) {
     switch (type) {
+    case QP_TYPE_TEXT: {
+        int32_t status=(d->ownership.enabled && !d->profile_assigned)?EACCES:
+            text_begin(&d->text,d->pad.user_id,payload,length,now_ms());
+        if(status) {int32_t result[2]={status,0};send_message(d,type,result,sizeof result);}
+        return;
+    }
     case QP_STATUS:
     case QP_INITIALIZE:
         if (length) { send_error(d, PMCP_ERR_BAD_LENGTH, "request must be empty"); return; }
@@ -275,6 +323,9 @@ static void handle_message(struct daemon *d, uint8_t type, const uint8_t *payloa
     case QP_VLC:
     case QP_KODI: {
         if (length) { send_error(d, PMCP_ERR_BAD_LENGTH, "request must be empty"); return; }
+        if(d->ownership.enabled && !d->profile_assigned) {
+            int32_t denied=EACCES; send_message(d,type,&denied,sizeof denied); return;
+        }
         int32_t result = type == QP_VLC ? system_launch_vlc() : system_launch_kodi();
         log_event(type == QP_VLC ? "launch_vlc" : "launch_kodi", "\"status\":%d", result);
         send_message(d, type, &result, sizeof result);
@@ -287,6 +338,12 @@ static void handle_message(struct daemon *d, uint8_t type, const uint8_t *payloa
         }
         struct pad *pad = &d->pad;
         memcpy(&pad->state, payload, sizeof pad->state);
+        if(d->ownership.enabled && !d->profile_assigned) {
+            /* Only profile-picker navigation is allowed before assignment. */
+            pad->state.buttons &= 0x60F0u; /* D-pad, Cross and Circle */
+            pad->state.lx=pad->state.ly=pad->state.rx=pad->state.ry=128;
+            pad->state.l2=pad->state.r2=0;
+        }
         d->last_state_ms = now_ms();
         struct pmcp_ack ack = {pad->state.seq, apply(d)};
         send_message(d, PMCP_ACK, &ack, sizeof ack);
@@ -406,6 +463,7 @@ int main(int argc, char **argv) {
     d.listen_fd = d.client_fd = -1;
     d.pad.handle = d.pad.user_id = -1;
     d.other_connected = -1;
+    owner_monitor_init(&d.ownership);
     neutral(&d.pad.state);
     d.running = 1;
     d.started_ms = now_ms();
@@ -450,6 +508,13 @@ int main(int argc, char **argv) {
 
     uint64_t last_stats = now_ms();
     while (d.running && !stop_requested) {
+        int was_monitored=d.ownership.synced;
+        int monitored=owner_monitor_poll(&d.ownership,now_ms(),ownership_event,&d);
+        if(was_monitored && !monitored && d.pad.handle>=0)
+            yield_controller(&d,"Controller monitor unavailable. Controller turned off.");
+        if(d.handoff_pending && now_ms()-d.last_handoff_retry>=500) {
+            d.handoff_pending=disconnect_controller(&d)!=0; d.last_handoff_retry=now_ms();
+        }
         struct pollfd fds[2] = {{d.listen_fd, POLLIN, 0}, {d.client_fd, POLLIN, 0}};
         int count = d.client_fd >= 0 ? 2 : 1;
         int ready = poll(fds, (nfds_t)count, (int)d.cfg.tick_ms);
@@ -458,6 +523,11 @@ int main(int argc, char **argv) {
         if (ready > 0 && (fds[0].revents & POLLIN)) accept_client(&d);
 
         uint64_t now = now_ms();
+        if(d.text.active && (d.client_fd<0 || now-d.last_rx_ms>1800)) text_cancel(&d.text,ECANCELED);
+        if(text_tick(&d.text,now)) {
+            int32_t result[2]={d.text.status,(int32_t)d.text.index};
+            send_message(&d,QP_TYPE_TEXT,result,sizeof result);
+        }
         if (d.client_fd >= 0 && now - d.last_state_ms > d.cfg.watchdog_ms) force_neutral(&d, "watchdog");
         if (d.client_fd >= 0 && now - d.last_rx_ms > d.cfg.idle_ms) drop_client(&d, "idle");
         /* Keep feeding the pads like a real controller does. */
@@ -471,6 +541,8 @@ int main(int argc, char **argv) {
         }
     }
 
+    text_cancel(&d.text,ECANCELED);
+    while(d.text.cleanup) {text_tick(&d.text,now_ms());if(d.text.cleanup) usleep(100000);}
     if (stop_requested) log_event("signal", "");
     force_neutral(&d, "exit");
     if (d.client_fd >= 0) close(d.client_fd);
@@ -479,6 +551,7 @@ int main(int argc, char **argv) {
     log_event("pad_removed", "\"status\":%d", remove_status);
     log_event("stats", "\"reports_sent\":%llu,\"report_failures\":%u,\"neutral_events\":%u",
               (unsigned long long)d.reports_sent, d.report_failures, d.neutral_events);
+    owner_monitor_close(&d.ownership);
     system_shutdown();
     log_event("exit_requested", "\"code\":%d", remove_status ? 1 : 0);
     return remove_status ? 1 : 0;

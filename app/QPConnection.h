@@ -12,6 +12,7 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 @property(nonatomic,readonly) QPConnectionFailure failureKind;
 @property(nonatomic,readonly) BOOL controllerChecked;
 @property(nonatomic,readonly) BOOL padReady;
+@property(nonatomic,readonly) BOOL supportsOwnership,profileAssigned,waitingForProfile,monitorReady,supportsTextInput;
 @property(nonatomic,readonly) BOOL connecting;
 @property(nonatomic,readonly,copy) NSString *message;
 @property(nonatomic,readonly) NSInteger latency;
@@ -35,6 +36,7 @@ typedef NS_ENUM(NSInteger, QPConnectionFailure) { QPConnectionFailureNone, QPCon
 - (void)checkController;
 - (void)initializeController;
 - (void)disconnectController;
+- (void)typeText:(NSString *)text;
 - (void)launchVLC;
 - (void)launchKodi;
 - (void)loadServiceAt:(NSString *)host;

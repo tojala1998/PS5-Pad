@@ -254,9 +254,9 @@ static void Round(UIView *view,CGFloat radius) {
 @property(nonatomic,copy) NSString *sessionIdentifier,*lifecycleBlockedReason;
 @property(nonatomic) NSUInteger initializationRequests,initializationSends,initializationLoads;
 @property(nonatomic,copy) NSString *initializationFailure;
-@property(nonatomic,strong) UIStackView *initializationProgress;
-@property(nonatomic,strong) NSArray<UILabel *> *initializationSteps;
-@property(nonatomic,strong) UIActivityIndicatorView *initializationSpinner;
+@property(nonatomic,strong) UIView *connectionBar;
+@property(nonatomic) BOOL connectionBarBusy,connectionWasReady;
+@property(nonatomic) NSUInteger connectionBarGeneration;
 @property(nonatomic,strong) UILabel *initializeHint;
 - (void)resume;
 - (void)activateScene;
@@ -306,6 +306,10 @@ static void Round(UIView *view,CGFloat radius) {
             qp_initialization_complete(&self->_initialization,status==0);
             self.initializationFailure=status?self.link.message:nil;
             self.result.text=self.link.message;
+        } else if([action isEqual:@"handoff"]) {
+            [self cancelEnsureSession]; qp_initialization_cancel(&self->_initialization);
+            self.wantsConnection=NO; self.autoInitializeAttempted=YES; self.needsInitializePrompt=NO;
+            self.showingLinkProgress=YES;
         } else if([action isEqual:@"disconnect_controller"]) {
             qp_initialization_cancel(&self->_initialization); self.showingLinkProgress=YES;
             self.result.text=self.link.message;
@@ -316,6 +320,7 @@ static void Round(UIView *view,CGFloat radius) {
             }
             self.result.text=self.link.message;
         }
+        else if([action isEqual:@"keyboard"]) self.result.text=self.link.message;
         else if(status) self.result.text=[NSString stringWithFormat:@"%@ failed (0x%08X)",action,(unsigned)status];
         else self.result.text=[NSString stringWithFormat:@"%@ launch requested",action];
     };
@@ -350,17 +355,9 @@ static void Round(UIView *view,CGFloat radius) {
     }
     _result=Label(@"",10,UIFontWeightRegular,Color(0xAAAAAA)); _result.textAlignment=NSTextAlignmentCenter;
     _result.numberOfLines=2; [_canvas addSubview:_result]; [self refresh];
-    _initializeHint=Label(@"If another controller takes over, use ••• → Initialize Controller.",11,UIFontWeightRegular,Color(0x999999));
-    NSMutableArray<UILabel *> *steps=[NSMutableArray array];
-    for(NSString *title in @[@"Service",@"Controller",@"Done"]) {
-        UILabel *step=Label(title,11,UIFontWeightMedium,Color(0xA5A5A5)); step.textAlignment=NSTextAlignmentCenter; [steps addObject:step];
-    }
-    _initializationSteps=steps;
-    _initializationProgress=[[UIStackView alloc] initWithArrangedSubviews:steps];
-    _initializationProgress.axis=UILayoutConstraintAxisHorizontal; _initializationProgress.distribution=UIStackViewDistributionFillEqually;
-    _initializationProgress.hidden=YES; [_canvas addSubview:_initializationProgress];
-    _initializationSpinner=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    _initializationSpinner.color=Accent(); _initializationSpinner.hidesWhenStopped=YES; [_canvas addSubview:_initializationSpinner];
+    _initializeHint=Label(@"If another controller takes over, use ••• → Turn On Controller.",11,UIFontWeightRegular,Color(0x999999));
+    _connectionBar=[UIView new]; _connectionBar.backgroundColor=Color(0x53D889);
+    _connectionBar.layer.cornerRadius=1.5; _connectionBar.hidden=YES; [_canvas addSubview:_connectionBar];
     _initializeHint.numberOfLines=2; _initializeHint.textAlignment=NSTextAlignmentCenter; [_canvas addSubview:_initializeHint];
     qp_lifecycle_view_ready(&_lifecycle); [self scheduleActivation];
 }
@@ -380,8 +377,7 @@ static void Round(UIView *view,CGFloat radius) {
     _buttons[6].frame=CGRectMake(1,top+area/2+4,55,area/2-4);
     _buttons[7].frame=CGRectMake(w-56,top,55,area);
     _initializeHint.frame=CGRectMake(35,h-118,w-70,38);
-    _initializationProgress.frame=CGRectMake(25,h-112,w-50,26);
-    _initializationSpinner.frame=CGRectMake(3,h-22,18,18);
+    _connectionBar.frame=CGRectMake(w/2-40,57,80,3);
     CGFloat unit=(w-28)/5;
     for(NSUInteger i=0;i<_mediaButtons.count;i++) _mediaButtons[i].frame=CGRectMake(14+i*unit,h-75,unit,52);
     _result.frame=CGRectMake(20,h-24,w-40,24);
@@ -390,6 +386,29 @@ static void Round(UIView *view,CGFloat radius) {
     [super viewDidAppear:animated];
     [self scheduleActivation]; [self resume];
 }
+- (void)updateConnectionIndicator {
+    BOOL ready=_link.ready&&_link.padReady&&_link.profileAssigned;
+    BOOL busy=_ensureSession.active||_link.connecting||qp_initialization_pending(&_initialization);
+    if(busy && !_connectionBarBusy) {
+        _connectionBarGeneration++; [_connectionBar.layer removeAllAnimations];
+        _connectionBar.hidden=NO; _connectionBar.alpha=1;
+        CABasicAnimation *pulse=[CABasicAnimation animationWithKeyPath:@"opacity"];
+        pulse.fromValue=@0.25; pulse.toValue=@1; pulse.duration=.6;
+        pulse.autoreverses=YES; pulse.repeatCount=HUGE_VALF;
+        [_connectionBar.layer addAnimation:pulse forKey:@"connecting"];
+    } else if(!busy && ready && !_connectionWasReady) {
+        NSUInteger generation=++_connectionBarGeneration;
+        [_connectionBar.layer removeAllAnimations]; _connectionBar.hidden=NO; _connectionBar.alpha=1;
+        [UIView animateWithDuration:.55 delay:.2 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            self.connectionBar.alpha=0;
+        } completion:^(BOOL finished){
+            (void)finished; if(generation==self.connectionBarGeneration) self.connectionBar.hidden=YES;
+        }];
+    } else if(!busy && (!ready || _connectionBarBusy)) {
+        _connectionBarGeneration++; [_connectionBar.layer removeAllAnimations]; _connectionBar.hidden=YES;
+    }
+    _connectionBarBusy=busy; _connectionWasReady=ready;
+}
 - (void)refresh {
     if(_ensureSession.active && _link.ready) [self cancelEnsureSession];
     if(_initialization.phase==QP_INIT_DONE && (!_link.ready || !_link.padReady)) { qp_initialization_cancel(&_initialization); _showingLinkProgress=YES; }
@@ -397,29 +416,21 @@ static void Round(UIView *view,CGFloat radius) {
     NSString *progress=nil;
     if(_initialization.phase==QP_INIT_WAITING) progress=_link.ready?@"Checking controller…":(_initialization.loaded?@"Starting service…":@"Connecting to service…");
     else if(_initialization.phase==QP_INIT_SENT) progress=@"Initializing controller…";
-    else if(_initialization.phase==QP_INIT_DONE) progress=@"Ready. Select your profile on the TV if asked.";
+    else if(_initialization.phase==QP_INIT_DONE) progress=_link.waitingForProfile?@"Choose your profile on the TV…":_link.message;
     else if(_initialization.phase==QP_INIT_FAILED) progress=_initializationFailure?:_link.message;
-    _statusLabel.text=_ensureSession.active?(_ensureSession.loaded?@"Starting service…":@"Reconnecting…"):(_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.padReady?@"Virtual controller ready":@"Service connected · use •••"):
+    _statusLabel.text=_ensureSession.active?(_ensureSession.loaded?@"Starting service…":@"Reconnecting…"):(_link.disconnectingController?@"Disconnecting controller…":(pending?progress:(_link.controlBusy?_link.message:(_link.ready?(_link.waitingForProfile?@"Choose your profile on TV":(_link.profileAssigned?@"Controller ready":(_link.padReady?@"Controller connected":@"Service connected · use •••"))):
         (_link.connecting?@"Connecting…":(_host.length?@"Offline · use •••":@"Add your PS5"))))));
     if(_ensureSession.active) _result.text=_ensureSession.loaded?@"Starting the saved PS5 session…":@"Reconnecting to your existing controller…";
     else if(progress) _result.text=progress;
     else if(!_link.ready || _link.controlBusy) { _showingLinkProgress=YES; _result.text=_link.message; }
     else if(_showingLinkProgress) { _showingLinkProgress=NO; _result.text=_link.message; }
-    _initializationProgress.hidden=_initialization.phase==QP_INIT_IDLE; _initializeHint.hidden=!_initializationProgress.hidden;
-    NSUInteger stage=_initialization.phase==QP_INIT_DONE?3:(_initialization.phase==QP_INIT_SENT?1:0);
-    if(_initialization.phase==QP_INIT_FAILED) stage=_link.ready?1:0;
-    NSArray<NSString *> *names=@[stage>0?@"Service ready":(_initialization.loaded?@"Starting service":@"Service"),@"Controller",@"Done"];
-    for(NSUInteger i=0;i<_initializationSteps.count;i++) {
-        NSString *mark=i<stage?@"✓":(i==stage?(_initialization.phase==QP_INIT_FAILED?@"!":@"●"):@"○");
-        _initializationSteps[i].text=[NSString stringWithFormat:@"%@ %@",mark,names[i]];
-        _initializationSteps[i].textColor=(i==stage&&_initialization.phase==QP_INIT_FAILED)?Color(0xF08D8D):(i<=stage?Accent():Color(0x777777));
-    }
-    if(pending || _link.disconnectingController || _ensureSession.active) [_initializationSpinner startAnimating]; else [_initializationSpinner stopAnimating];
+    _initializeHint.hidden=_link.profileAssigned;
+    [self updateConnectionIndicator];
     _consoleButton.accessibilityValue=_statusLabel.text; _consoleButton.enabled=!_link.disconnectingController&&!_ensureSession.active;
     BOOL active=_wantsConnection&&_link.ready&&_link.padReady&&!_link.controlBusy&&!_link.disconnectingController&&!pending; _swipe.active=active;
-    for(QPButton *button in _buttons) { button.enabled=active; button.alpha=active?1:.35; if(!active) [button clear]; }
+    for(QPButton *button in _buttons) { BOOL allowed=active&&(!_link.waitingForProfile || !(button.mask&~0x60F0u)); button.enabled=allowed; button.alpha=allowed?1:.35; if(!allowed) [button clear]; }
     if(!active) { _pulseMask=0; _pulseGeneration++; }
-    for(UIButton *button in _mediaButtons) { button.enabled=active; button.alpha=active?1:.3; }
+    for(UIButton *button in _mediaButtons) { button.enabled=active&&!_link.waitingForProfile; button.alpha=button.enabled?1:.3; }
     UIApplication.sharedApplication.idleTimerDisabled=NO;
     [self offerInitializationIfReady];
     NSDictionary *record=@{@"session_id":_sessionIdentifier?:@"",@"process_id":@(NSProcessInfo.processInfo.processIdentifier),
@@ -520,11 +531,13 @@ static void Round(UIView *view,CGFloat radius) {
 - (void)offerInitializationIfReady {
     if(!_wantsConnection || _link.disconnectingController || !self.view.window || self.presentedViewController || !_lifecycle.active ||
        qp_initialization_pending(&_initialization)) return;
-    if(qp_resume_reuses_controller(_link.ready,_link.controllerChecked,_link.padReady,_link.controlBusy)) {
+    if(qp_resume_reuses_controller(_link.ready,_link.controllerChecked,_link.padReady&&(!_link.supportsOwnership||_link.profileAssigned),_link.controlBusy)) {
         _needsInitializePrompt=NO;
         if(_initialization.phase==QP_INIT_IDLE && !_autoInitializeAttempted) _reusedController=YES;
         return;
     }
+    if(_link.waitingForProfile) { _needsInitializePrompt=NO; return; }
+    if(_link.supportsOwnership&&!_link.monitorReady) return;
     if(qp_should_auto_initialize(_autoInitializeAttempted,_link.ready,_link.controllerChecked,_link.padReady,_link.controlBusy,_link.supportsControl,(int)_link.userStatus)) {
         [self beginInitializationAllowLoad:NO]; return;
     }
@@ -568,17 +581,17 @@ static void Round(UIView *view,CGFloat radius) {
     UIAlertAction *action=[UIAlertAction actionWithTitle:@"Open Kodi" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; self.result.text=@"Opening Kodi…"; [self.link launchKodi];
     }];
-    action.enabled=_link.ready&&_link.supportsControl&&!_link.controlBusy&&_link.kodiInstalled;
+    action.enabled=_link.ready&&_link.supportsControl&&!_link.controlBusy&&_link.kodiInstalled&&(!_link.supportsOwnership||_link.profileAssigned);
     [sheet addAction:action];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:sheet animated:YES completion:nil];
 }
 - (void)offerInitialization {
     _needsInitializePrompt=NO;
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Initialize Controller"
-        message:@"Select your profile on the TV if asked. If another controller takes over, use ••• → Initialize Controller again. The other controller may disconnect."
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Turn On Controller"
+        message:@"Select your profile on the TV if asked. If another controller takes over, use ••• → Turn On Controller again. Selecting your profile switches off the other controller."
         preferredStyle:UIAlertControllerStyleAlert];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Turn On Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self requestInitialization];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Not now" style:UIAlertActionStyleCancel handler:nil]];
@@ -589,11 +602,30 @@ static void Round(UIView *view,CGFloat radius) {
     qp_initialization_cancel(&_initialization); _needsInitializePrompt=NO; _autoInitializeAttempted=YES; _wantsConnection=NO;
     [self clearControls]; [_link disconnectController];
 }
+- (void)showKeyboard {
+    [self clearControls];
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:@"Keyboard"
+        message:@"Open a text field on your PS5, then send text here. Up to 128 English letters, numbers, spaces or punctuation. Send does not press Enter."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [sheet addTextFieldWithConfigurationHandler:^(UITextField *field){
+        field.placeholder=@"Text to type"; field.autocorrectionType=UITextAutocorrectionTypeNo;
+        field.autocapitalizationType=UITextAutocapitalizationTypeNone;
+        field.smartQuotesType=UITextSmartQuotesTypeNo; field.smartDashesType=UITextSmartDashesTypeNo;
+        field.keyboardType=UIKeyboardTypeASCIICapable;
+    }];
+    __weak UIAlertController *weakSheet=sheet;
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Send" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        (void)a; NSString *text=weakSheet.textFields.firstObject.text?:@"";
+        weakSheet.textFields.firstObject.text=@""; [self.link typeText:text];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:sheet animated:YES completion:nil];
+}
 - (void)showConnection {
     [self clearControls];
-    NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. The other controller may disconnect.",_host?:@"No console added",_link.message?:@""];
+    NSString *detail=[NSString stringWithFormat:@"%@\n%@\n\nInitialize connects to the service, starts it if needed, and turns on the controller. Selecting your profile switches off the other controller.",_host?:@"No console added",_link.message?:@""];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:_link.ready?@"PS5 connection":@"Connect to PS5" message:detail preferredStyle:UIAlertControllerStyleAlert];
-    UIAlertAction *initialize=[UIAlertAction actionWithTitle:@"Initialize Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+    UIAlertAction *initialize=[UIAlertAction actionWithTitle:@"Turn On Controller" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self requestInitialization];
     }];
     initialize.enabled=!qp_initialization_pending(&_initialization)&&!_link.disconnectingController; [sheet addAction:initialize];
@@ -610,6 +642,11 @@ static void Round(UIView *view,CGFloat radius) {
         else if(self.host.length) { self.wantsConnection=YES; [self startEnsureSession]; }
         else [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
     }]];
+    UIAlertAction *keyboard=[UIAlertAction actionWithTitle:@"Keyboard…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        (void)a; [self dismissViewControllerAnimated:YES completion:^{ [self showKeyboard]; }];
+    }];
+    keyboard.enabled=_link.ready&&_link.supportsTextInput&&_link.profileAssigned&&!_link.controlBusy;
+    [sheet addAction:keyboard];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Find / Add PS5" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         (void)a; [self dismissViewControllerAnimated:YES completion:^{ [self findConsole]; }];
     }]];
