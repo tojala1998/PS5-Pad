@@ -55,24 +55,7 @@ print(f'{number >> 8}.{number & 255}')
 PY
 )"
 ELF="$ROOT/service/prebuilt/padd-controller-$HELPER_VERSION.elf"
-test -f "$ELF" || { echo "Missing verified helper 2.8 ELF; do not package helper 2.7." >&2; exit 1; }
-cp "$ELF" "$APP/padd-controller.elf"
-VERSION="$(python3 -c 'import plistlib; print(plistlib.load(open("Info.plist","rb"))["CFBundleShortVersionString"])')"
-OUTPUT="$ROOT/dist/PS5-Pad-$VERSION-unsigned.ipa"
-python3 package.py "$APP" "$BUILD/PS5-Pad.ipa"
-python3 verify_ipa.py "$BUILD/PS5-Pad.ipa" --elf "$ELF" --report "$BUILD/verification.json"
-cp "$BUILD/PS5-Pad.ipa" "$OUTPUT"
-cp "$BUILD/verification.json" "$ROOT/dist/PS5-Pad-$VERSION-verification.json"
-python3 "$ROOT/tools/prepare_source.py" --ipa "$OUTPUT" --report "$ROOT/dist/PS5-Pad-$VERSION-verification.json"
-printf 'Ready: %s\n' "$OUTPUT"
-,text,re.M)
-if not found: raise SystemExit('Cannot identify PS5 helper version')
-version=int(found.group(1),16)
-print(f'{version >> 8}.{version & 255}')
-PY
-)"
-ELF="$ROOT/service/prebuilt/padd-controller-$HELPER_VERSION.elf"
-test -f "$ELF" || { echo "Missing verified helper 2.8 ELF; do not package helper 2.7." >&2; exit 1; }
+test -f "$ELF" || { echo "Missing verified helper $HELPER_VERSION ELF; do not package an older helper." >&2; exit 1; }
 cp "$ELF" "$APP/padd-controller.elf"
 VERSION="$(python3 -c 'import plistlib; print(plistlib.load(open("Info.plist","rb"))["CFBundleShortVersionString"])')"
 OUTPUT="$ROOT/dist/PS5-Pad-$VERSION-unsigned.ipa"
